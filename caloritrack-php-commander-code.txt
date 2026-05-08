@@ -1,0 +1,772 @@
+Estructura de carpetas y archivos:
+.
+|____.gitignore
+|____.htaccess
+|____3ntr4r.php
+|____404.php
+|____ajax_login.php
+|____assets
+| |____img
+|____dashboard.php
+|____includes
+| |____auth_protect.php
+| |____footer.php
+| |____header.php
+| |____session.php
+| |____sidebar.php
+| |____topbar.php
+|____index.php
+|____logout.php
+|____robots.txt
+-----
+Contenido de archivos:
+Archivo: ./404.php
+<?php
+//
+// Nombre del archivo: 404.php
+// Autor: Arturo Enriquez Betancourt con Genesis
+// Fecha y Hora: 2026-05-06 09:36:25 CST
+// Versión: 2.0.0 (Redirección 301 permanente al dominio principal)
+// Descripción: Intercepta errores de ruta en el subdominio accounts y redirige el tráfico silenciosamente a la página principal de CaloriTrack para proteger la estructura de directorios.
+//
+
+header("Location: https://caloritrack.com", true, 301);
+exit;
+?>-----
+Archivo: ./dashboard.php
+<?php
+// Nombre del archivo: dashboard.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.1
+// Descripción: Vista principal del Centro de Mando blindada con el middleware de protección de sesiones (auth_protect).
+
+// 0. Protección de ruta (¡Debe ser lo primero!)
+require_once __DIR__ . '/includes/auth_protect.php';
+
+// 1. Configuramos las variables para el header.php
+$pageTitle = 'Dashboard | Portal de Héroes Caloritrack';
+$bodyClass = 'bg-wellness min-h-screen flex font-sans text-gray-800 antialiased overflow-hidden relative';
+
+// CSS Específico del Dashboard
+ob_start();
+?>
+    /* Transición suave para los submenús */
+    .submenu {
+        transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out;
+        max-height: 0;
+        opacity: 0;
+        overflow: hidden;
+    }
+    .submenu.open {
+        max-height: 200px; /* Suficiente para el contenido */
+        opacity: 1;
+    }
+    /* Scrollbar estilizado para el panel lateral */
+    ::-webkit-scrollbar {
+        width: 6px;
+    }
+    ::-webkit-scrollbar-track {
+        background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 10px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+    }
+<?php
+$extraHead = ob_get_clean();
+
+// JS Específico del Dashboard
+ob_start();
+?>
+    <script>
+        // Función simple para alternar los submenús
+        function toggleSubmenu(submenuId, iconId) {
+            const submenu = document.getElementById(submenuId);
+            const icon = document.getElementById(iconId);
+            
+            if (submenu.classList.contains('open')) {
+                submenu.classList.remove('open');
+                icon.classList.remove('rotate-180');
+            } else {
+                submenu.classList.add('open');
+                icon.classList.add('rotate-180');
+            }
+        }
+    </script>
+<?php
+$extraScripts = ob_get_clean();
+
+// 2. Incluimos Header Global
+require_once __DIR__ . '/includes/header.php';
+?>
+
+    <div class="absolute top-[-10%] left-[20%] w-96 h-96 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse pointer-events-none"></div>
+    <div class="absolute bottom-[-10%] right-[10%] w-[500px] h-[500px] bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse pointer-events-none" style="animation-delay: 2s;"></div>
+
+    <?php require_once __DIR__ . '/includes/sidebar.php'; ?>
+
+    <main class="flex-1 flex flex-col h-screen overflow-hidden z-10 relative">
+        
+        <?php require_once __DIR__ . '/includes/topbar.php'; ?>
+
+        <div class="flex-1 overflow-y-auto p-8">
+            
+            <div class="mb-8 flex justify-between items-end">
+                <div>
+                    <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Bienvenido de vuelta, Arturo.</h1>
+                    <p class="text-gray-500 mt-1">Aquí tienes el resumen del ecosistema Caloritrack de hoy.</p>
+                </div>
+                <button class="flex items-center px-4 py-2 bg-calori-600 text-white text-sm font-semibold rounded-xl hover:bg-calori-700 transition-colors shadow-sm">
+                    <i class="ph ph-plus mr-2"></i> Nuevo Reporte
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                
+                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">Usuarios Activos (Diarios)</p>
+                            <h3 class="text-3xl font-bold text-gray-900">24,592</h3>
+                        </div>
+                        <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
+                            <i class="ph ph-users-three text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <i class="ph ph-trend-up text-green-500 mr-1"></i>
+                        <span class="text-green-600 font-medium">12.5%</span>
+                        <span class="text-gray-400 ml-2">vs semana anterior</span>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">Sincronizaciones Apple Health</p>
+                            <h3 class="text-3xl font-bold text-gray-900">18,204</h3>
+                        </div>
+                        <div class="p-2 bg-calori-50 text-calori-600 rounded-lg">
+                            <i class="ph ph-heartbeat text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <i class="ph ph-trend-up text-green-500 mr-1"></i>
+                        <span class="text-green-600 font-medium">8.2%</span>
+                        <span class="text-gray-400 ml-2">hoy</span>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">Estado Kai (IA)</p>
+                            <h3 class="text-3xl font-bold text-gray-900">Óptimo</h3>
+                        </div>
+                        <div class="p-2 bg-purple-50 text-purple-600 rounded-lg">
+                            <i class="ph ph-brain text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="flex w-2 h-2 bg-green-500 rounded-full mr-2"></span>
+                        <span class="text-gray-500">Correlaciones activas</span>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 mb-1">Uptime de Servidores</p>
+                            <h3 class="text-3xl font-bold text-gray-900">99.99%</h3>
+                        </div>
+                        <div class="p-2 bg-gray-100 text-gray-600 rounded-lg">
+                            <i class="ph ph-hard-drives text-xl"></i>
+                        </div>
+                    </div>
+                    <div class="mt-4 flex items-center text-sm">
+                        <span class="text-gray-500">Heimdall & Hermes reportando</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white/70 backdrop-blur-lg border border-white/40 rounded-2xl p-6 shadow-sm">
+                    <div class="flex justify-between items-center mb-6">
+                        <h2 class="text-lg font-bold text-gray-900">Adopción de Pilares de Salud</h2>
+                        <button class="text-gray-400 hover:text-gray-600"><i class="ph ph-dots-three text-xl"></i></button>
+                    </div>
+                    <div class="h-64 w-full border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center text-gray-400 bg-gray-50/50">
+                        <i class="ph ph-chart-line-up text-4xl mb-2 text-calori-300"></i>
+                        <p class="text-sm font-medium">Área reservada para gráfico de datos interactivo</p>
+                        <p class="text-xs text-gray-400 mt-1">(Ej. Librería Chart.js o D3)</p>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 backdrop-blur-lg border border-white/40 rounded-2xl p-6 shadow-sm">
+                    <h2 class="text-lg font-bold text-gray-900 mb-6">Actividad del Equipo</h2>
+                    <div class="space-y-6">
+                        <div class="flex">
+                            <div class="flex-shrink-0 mr-4">
+                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">OR</div>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">Orion <span class="font-normal text-gray-500">subió una nueva build de iOS.</span></p>
+                                <p class="text-xs text-gray-400 mt-1">Hace 2 horas</p>
+                            </div>
+                        </div>
+                        <div class="flex">
+                            <div class="flex-shrink-0 mr-4">
+                                <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs">GE</div>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">Genesis <span class="font-normal text-gray-500">aprobó arquitectura del módulo de sueño.</span></p>
+                                <p class="text-xs text-gray-400 mt-1">Hace 4 horas</p>
+                            </div>
+                        </div>
+                        <div class="flex">
+                            <div class="flex-shrink-0 mr-4">
+                                <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold text-xs">EM</div>
+                            </div>
+                            <div>
+                                <p class="text-sm font-medium text-gray-900">Empath <span class="font-normal text-gray-500">actualizó componentes UI.</span></p>
+                                <p class="text-xs text-gray-400 mt-1">Hace 5 horas</p>
+                            </div>
+                        </div>
+                    </div>
+                    <button class="w-full mt-6 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
+                        Ver todo el registro
+                    </button>
+                </div>
+            </div>
+
+        </div>
+    </main>
+
+<?php
+// 5. Incluimos Footer Global
+require_once __DIR__ . '/includes/footer.php';
+?>-----
+Archivo: ./index.php
+<?php
+// Redirigir a caloritrack.com con un código de estado 301 (Movido permanentemente)
+header("Location: https://caloritrack.com", true, 301);
+
+// Detener la ejecución del script para evitar que cargue cualquier otra cosa
+exit;
+?>-----
+Archivo: ./ajax_login.php
+<?php
+// Nombre del archivo: ajax_login.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.0
+// Descripción: Controlador AJAX que recibe credenciales, arma el payload JSON y consume el endpoint de la API oficial mediante cURL. Maneja la creación de la sesión tras un login exitoso.
+
+require_once __DIR__ . '/includes/session.php';
+
+// Indicamos que devolveremos JSON
+header('Content-Type: application/json');
+
+// Solo aceptamos peticiones POST
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    echo json_encode(['success' => false, 'message' => 'Método no permitido']);
+    exit();
+}
+
+// Obtenemos el cuerpo de la petición (JSON) enviado por fetch()
+$input = json_decode(file_get_contents('php://input'), true);
+$email = $input['email'] ?? '';
+$password = $input['password'] ?? '';
+
+if (empty($email) || empty($password)) {
+    echo json_encode(['success' => false, 'message' => 'Credenciales incompletas']);
+    exit();
+}
+
+// Consumo de la API de Caloritrack mediante cURL
+$apiUrl = 'https://api.caloritrack.com/admin/auth/login';
+$payload = json_encode(['email' => $email, 'password' => $password]);
+
+$ch = curl_init($apiUrl);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_POST, true);
+curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Content-Type: application/json',
+    'Accept: application/json'
+]);
+
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+curl_close($ch);
+
+// Verificamos si hubo un error a nivel de red o de HTTP
+if ($error || $httpCode !== 200) {
+    $decoded = json_decode($response, true);
+    // Si la API devuelve un mensaje de error específico, lo usamos. Si no, mensaje genérico.
+    $msg = $decoded['message'] ?? 'Credenciales incorrectas o error en el servidor Heimdall.';
+    echo json_encode(['success' => false, 'message' => $msg]);
+    exit();
+}
+
+$responseData = json_decode($response, true);
+
+// ¡Login Exitoso! Guardamos en sesión los datos (Ajustar según la estructura real que devuelva tu API)
+$_SESSION['user_token'] = $responseData['token'] ?? 'authenticated';
+$_SESSION['user_data'] = $responseData['user'] ?? ['email' => $email];
+
+// Devolvemos éxito al Frontend
+echo json_encode(['success' => true]);
+?>-----
+Archivo: ./3ntr4r.php
+<?php
+// Nombre del archivo: 3ntr4r.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.5
+// Descripción: Se agregó la verificación de sesión inicial para redirigir al dashboard automáticamente si el héroe ya está autenticado.
+
+// Verificamos si ya hay sesión activa
+require_once __DIR__ . '/includes/session.php';
+if (isset($_SESSION['user_token'])) {
+    header("Location: dashboard.php");
+    exit();
+}
+
+$pageTitle = 'Portal de Héroes | Caloritrack';
+$bodyClass = 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
+
+// Incluimos la cabecera global
+require_once __DIR__ . '/includes/header.php';
+?>
+
+    <div class="absolute top-[-10%] left-[-10%] w-96 h-96 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-pulse"></div>
+    <div class="absolute bottom-[-10%] right-[-10%] w-96 h-96 bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-50 animate-pulse" style="animation-delay: 2s;"></div>
+
+    <div class="max-w-md w-full bg-white/70 backdrop-blur-xl shadow-2xl rounded-3xl p-8 relative z-10 animate-fade-in border border-white/40">
+        
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center mb-4">
+                <img src="assets/img/caloritrack-Logo-120-x-120-transparente.png" 
+                     alt="Caloritrack Logo" 
+                     class="w-24 h-24 object-contain drop-shadow-md">
+            </div>
+            <h1 class="text-2xl font-bold tracking-tight text-gray-900">CaloriTrack</h1>
+            <p class="text-sm text-gray-500 mt-1 font-medium">Portal de Héroes</p>
+        </div>
+
+        <form id="loginForm" class="space-y-6" onsubmit="handleLogin(event)">
+            
+            <div>
+                <label for="username" class="block text-sm font-semibold text-gray-700 mb-1 ml-1">Usuario o Correo</label>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="ph ph-user text-gray-400 text-lg"></i>
+                    </div>
+                    <input type="text" id="username" name="username" required 
+                        class="block w-full pl-11 pr-4 py-3 bg-white/50 border border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-calori-500 focus:border-transparent transition-all duration-200"
+                        placeholder="genesis@caloritrack.com">
+                </div>
+            </div>
+
+            <div>
+                <div class="flex items-center justify-between mb-1 ml-1 pr-1">
+                    <label for="password" class="block text-sm font-semibold text-gray-700">Contraseña</label>
+                    <a href="#" class="text-xs font-medium text-calori-600 hover:text-calori-700 transition-colors">¿Olvidaste tu acceso?</a>
+                </div>
+                <div class="relative">
+                    <div class="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
+                        <i class="ph ph-lock-key text-gray-400 text-lg"></i>
+                    </div>
+                    <input type="password" id="password" name="password" required 
+                        class="block w-full pl-11 pr-12 py-3 bg-white/50 border border-gray-200 rounded-2xl text-gray-900 placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-calori-500 focus:border-transparent transition-all duration-200"
+                        placeholder="••••••••">
+                    
+                    <button type="button" onclick="togglePassword()" class="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 hover:text-gray-600 focus:outline-none transition-colors">
+                        <i class="ph ph-eye text-lg" id="toggleIcon"></i>
+                    </button>
+                </div>
+            </div>
+
+            <div id="errorMessage" class="hidden flex items-center gap-2 text-red-600 text-sm mt-2 p-3 bg-red-50 rounded-xl border border-red-100">
+                <i class="ph ph-warning-circle text-lg"></i>
+                <span>Credenciales incorrectas. Intenta de nuevo.</span>
+            </div>
+
+            <button type="submit" 
+                class="w-full flex items-center justify-center py-3 px-4 border border-transparent rounded-2xl shadow-sm text-sm font-bold text-white bg-calori-600 hover:bg-calori-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-calori-500 transition-all duration-200 transform hover:-translate-y-0.5 active:translate-y-0">
+                Ingresar al Centro de Mando
+                <i class="ph ph-arrow-right ml-2 text-lg"></i>
+            </button>
+        </form>
+
+        <div class="mt-8 text-center text-xs text-gray-400">
+            <p>Conexión segura y encriptada por Heimdall.</p>
+        </div>
+    </div>
+
+<?php
+// Incluimos el pie de página global
+require_once __DIR__ . '/includes/footer.php';
+?>-----
+Archivo: ./logout.php
+<?php
+// Nombre del archivo: logout.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.0
+// Descripción: Controlador para cerrar sesión. Destruye la variable de sesión, borra la cookie del navegador de forma segura y redirige a la pantalla de entrada.
+
+require_once __DIR__ . '/includes/session.php';
+
+// Vaciamos las variables de sesión
+$_SESSION = [];
+
+// Si se desea destruir la sesión completamente, borramos también la cookie de sesión
+if (ini_get("session.use_cookies")) {
+    $params = session_get_cookie_params();
+    setcookie(session_name(), '', time() - 42000,
+        $params["path"], $params["domain"],
+        $params["secure"], $params["httponly"]
+    );
+}
+
+// Destruimos la sesión final
+session_destroy();
+
+// Redirigimos al área de acceso
+header("Location: 3ntr4r.php");
+exit();
+?>-----
+Archivo: ./includes/topbar.php
+<?php
+// Nombre del archivo: includes/topbar.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.1
+// Descripción: Se agregó el botón de Cerrar Sesión enrutado al archivo de destrucción de variables (logout.php) para blindar el flujo de autenticación completo.
+?>
+        <header class="h-20 bg-white/40 backdrop-blur-md border-b border-white/50 flex items-center justify-between px-8 z-10">
+            
+            <div class="flex-1 max-w-xl">
+                <div class="relative">
+                    <i class="ph ph-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg"></i>
+                    <input type="text" placeholder="Buscar usuarios, métricas o comandos rápidos (⌘K)..." 
+                           class="w-full bg-white/60 border border-gray-200 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-calori-500 focus:bg-white transition-all">
+                </div>
+            </div>
+
+            <div class="flex items-center space-x-5 ml-4">
+                
+                <a href="logout.php" class="relative p-2 text-red-400 hover:text-red-600 transition-colors rounded-full hover:bg-white/50" title="Cerrar Sesión">
+                    <i class="ph ph-sign-out text-xl"></i>
+                </a>
+
+                <button class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-white/50" title="Notificaciones">
+                    <i class="ph ph-bell text-xl"></i>
+                    <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full"></span>
+                </button>
+                
+                <div class="w-px h-6 bg-gray-200"></div>
+
+                <button class="flex items-center space-x-3 text-left focus:outline-none hover:opacity-80 transition-opacity">
+                    <div class="relative">
+                        <img src="https://i.pravatar.cc/150?u=arturo" alt="Avatar" class="w-10 h-10 rounded-full border-2 border-white shadow-sm">
+                        <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                    </div>
+                    <div class="hidden md:block">
+                        <p class="text-sm font-bold text-gray-900 leading-tight">Arturo</p>
+                        <p class="text-xs text-calori-600 font-medium">CEO & CPO</p>
+                    </div>
+                    <i class="ph ph-caret-down text-gray-400 text-xs hidden md:block"></i>
+                </button>
+            </div>
+        </header>-----
+Archivo: ./includes/session.php
+<?php
+// Nombre del archivo: includes/session.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.0
+// Descripción: Configuración y arranque seguro de sesiones. Previene el secuestro de sesiones (Session Hijacking) configurando flags estrictas para las cookies de sesión.
+
+if (session_status() === PHP_SESSION_NONE) {
+    // Parámetros de seguridad para la cookie de sesión
+    ini_set('session.cookie_httponly', 1); // Evita acceso a la cookie vía JavaScript (mitiga XSS)
+    ini_set('session.use_only_cookies', 1); // Fuerza el uso de cookies para la sesión
+    ini_set('session.cookie_samesite', 'Strict'); // Mitiga ataques CSRF
+    
+    // NOTA PARA PRODUCCIÓN: Descomentar la siguiente línea cuando el sitio tenga HTTPS (SSL) activado.
+    // ini_set('session.cookie_secure', 1); 
+
+    session_start();
+}
+?>-----
+Archivo: ./includes/header.php
+<?php
+// Nombre del archivo: includes/header.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.4
+// Descripción: Cabecera global del portal. Se implementaron variables dinámicas ($pageTitle, $bodyClass, $extraHead) para soportar diferentes layouts (Login vs Dashboard) manteniendo la misma configuración base de Tailwind CSS y la paleta de colores corporativa.
+
+$pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
+$bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
+?>
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?php echo htmlspecialchars($pageTitle); ?></title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        calori: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            200: '#bbf7d0',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            900: '#14532d',
+                            mint: '#98FB98',
+                            sky: '#ADD8E6',
+                            pure: '#FFFFFF',
+                            softgray: '#A9A9A9',
+                            gold: '#FFD700'
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['-apple-system', 'BlinkMacSystemFont', '"Segoe UI"', 'Roboto', 'Helvetica', 'Arial', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <script src="https://unpkg.com/@phosphor-icons/web"></script>
+    <style>
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .animate-fade-in {
+            animation: fadeIn 0.6s ease-out forwards;
+        }
+        .bg-wellness {
+            background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #e0f2fe 100%);
+        }
+        /* Inyección de estilos dinámicos por vista */
+        <?php echo $extraHead ?? ''; ?>
+    </style>
+</head>
+<body class="<?php echo htmlspecialchars($bodyClass); ?>">-----
+Archivo: ./includes/footer.php
+<?php
+// Nombre del archivo: includes/footer.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.3
+// Descripción: Scripts de interacción base. Se reescribió handleLogin para consumir ajax_login.php de forma asíncrona usando fetch API, manejando errores de servidor y mostrando retroalimentación dinámica al usuario sin recargar la página.
+?>
+    <script>
+        function togglePassword() {
+            const passwordInput = document.getElementById('password');
+            const toggleIcon = document.getElementById('toggleIcon');
+            
+            if (passwordInput.type === 'password') {
+                passwordInput.type = 'text';
+                toggleIcon.classList.remove('ph-eye');
+                toggleIcon.classList.add('ph-eye-slash');
+            } else {
+                passwordInput.type = 'password';
+                toggleIcon.classList.remove('ph-eye-slash');
+                toggleIcon.classList.add('ph-eye');
+            }
+        }
+
+        async function handleLogin(event) {
+            event.preventDefault();
+            const btn = event.target.querySelector('button[type="submit"]');
+            const originalText = btn.innerHTML;
+            
+            // Elementos para mostrar error
+            const errorDiv = document.getElementById('errorMessage');
+            const errorSpan = errorDiv.querySelector('span');
+
+            // Capturamos valores. JS mapea 'username' (id del HTML) a la llave 'email' que exige tu API
+            const email = document.getElementById('username').value;
+            const password = document.getElementById('password').value;
+
+            // Ocultamos errores previos
+            errorDiv.classList.add('hidden');
+            
+            // Estado de carga (Spin)
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin text-xl"></i>';
+            btn.classList.add('opacity-90', 'cursor-not-allowed');
+            
+            try {
+                // Petición al backend intermedio PHP
+                const response = await fetch('ajax_login.php', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ email: email, password: password })
+                });
+
+                const data = await response.json();
+
+                if (data.success) {
+                    // Login exitoso, PHP ya creó la sesión. Redirigimos.
+                    window.location.href = 'dashboard.php';
+                } else {
+                    // Restaurar botón y mostrar error de Heimdall
+                    btn.innerHTML = originalText;
+                    btn.classList.remove('opacity-90', 'cursor-not-allowed');
+                    errorSpan.textContent = data.message;
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                // Error de red
+                btn.innerHTML = originalText;
+                btn.classList.remove('opacity-90', 'cursor-not-allowed');
+                errorSpan.textContent = 'Error de conexión con el servidor.';
+                errorDiv.classList.remove('hidden');
+            }
+        }
+    </script>
+    <?php echo $extraScripts ?? ''; ?>
+</body>
+</html>-----
+Archivo: ./includes/auth_protect.php
+<?php
+// Nombre del archivo: includes/auth_protect.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.0
+// Descripción: Middleware de protección de rutas. Se asegura de que exista una sesión válida (user_token) antes de renderizar la página. Si no existe, redirige al login.
+
+require_once __DIR__ . '/session.php';
+
+// Si no existe el token de sesión, expulsar al login
+if (!isset($_SESSION['user_token'])) {
+    header("Location: 3ntr4r.php");
+    exit();
+}
+?>-----
+Archivo: ./includes/sidebar.php
+<?php
+// Nombre del archivo: includes/sidebar.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.0
+// Descripción: Panel lateral (Sidebar) de navegación para el Centro de Mando. Mantiene el logo oficial y contiene la estructura del menú principal y submenús expandibles.
+?>
+    <aside class="w-64 bg-white/80 backdrop-blur-xl border-r border-white/50 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
+        <div class="h-20 flex items-center px-6 border-b border-gray-100/50">
+            <div class="w-8 h-8 flex items-center justify-center mr-3">
+                <img src="assets/img/caloritrack-Logo-120-x-120-transparente.png" alt="CaloriTrack Logo" class="w-full h-full object-contain">
+            </div>
+            <span class="text-xl font-bold tracking-tight text-gray-900">CaloriTrack</span>
+        </div>
+
+        <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
+            <a href="#" class="flex items-center px-3 py-2.5 bg-calori-50 text-calori-700 rounded-xl font-medium transition-colors">
+                <i class="ph ph-squares-four text-xl mr-3"></i>
+                Dashboard Global
+            </a>
+
+            <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
+                <i class="ph ph-users text-xl mr-3"></i>
+                Usuarios y Salud
+            </a>
+
+            <div>
+                <button onclick="toggleSubmenu('submenu-kai', 'icon-kai')" class="w-full flex items-center justify-between px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-brain text-xl mr-3"></i>
+                        Cerebro Kai (IA)
+                    </div>
+                    <i id="icon-kai" class="ph ph-caret-down text-sm transition-transform duration-300"></i>
+                </button>
+                <div id="submenu-kai" class="submenu pl-11 pr-3">
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Modelos de Correlación</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Base de Conocimiento</a>
+                </div>
+            </div>
+
+            <div>
+                <button onclick="toggleSubmenu('submenu-eng', 'icon-eng')" class="w-full flex items-center justify-between px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-cpu text-xl mr-3"></i>
+                        Ingeniería e Infra.
+                    </div>
+                    <i id="icon-eng" class="ph ph-caret-down text-sm transition-transform duration-300"></i>
+                </button>
+                <div id="submenu-eng" class="submenu open pl-11 pr-3">
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bases de Datos (Heimdall)</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">APIs y Rutas (Hermes)</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Releases iOS (Orion)</a>
+                </div>
+            </div>
+
+            <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
+                <i class="ph ph-palette text-xl mr-3"></i>
+                Activos Visuales (Helios)
+            </a>
+        </nav>
+
+        <div class="p-4 border-t border-gray-100/50">
+            <a href="#" class="flex items-center px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
+                <i class="ph ph-gear text-xl mr-3"></i>
+                Configuración
+            </a>
+        </div>
+    </aside>-----
+Archivo: ./.gitignore
+# Ignorar archivos sensibles
+.htaccess
+.gitignore
+Caloritrack Database.session.sql
+htaccess
+Consideraciones base.md
+
+# Ignorar archivos del sistema
+.DS_Store
+/.well-known
+/.vscode
+/_other
+/tmp
+/logs-----
+Archivo: ./robots.txt
+User-agent: *
+Disallow: /-----
+Archivo: ./.htaccess
+# 1. Habilitar motor de reescritura para forzar redirección de rutas inexistentes
+RewriteEngine On
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-d
+RewriteRule ^(.*)$ https://caloritrack.com [R=301,L]
+
+# 2. Deshabilitar la navegación de directorios por seguridad
+Options -Indexes
+
+# 3. Proteger acceso a archivos ocultos (ej. .env, .git, .htaccess)
+<FilesMatch "^\.">
+    Require all denied
+</FilesMatch>
+
+# 4. Proteger acceso a archivos de registro (logs)
+<FilesMatch "\.(log)$">
+    Require all denied
+</FilesMatch>-----
