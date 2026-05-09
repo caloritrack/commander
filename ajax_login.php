@@ -2,8 +2,8 @@
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.0
-// Descripción: Controlador AJAX que recibe credenciales, arma el payload JSON y consume el endpoint de la API oficial mediante cURL. Maneja la creación de la sesión tras un login exitoso.
+// Versión: 1.2
+// Descripción: Controlador AJAX para login. Se corrigió el mapeo de la respuesta de Hermes para leer correctamente 'access_token' en lugar de 'token'.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -55,8 +55,22 @@ if ($error || $httpCode !== 200) {
 
 $responseData = json_decode($response, true);
 
-// ¡Login Exitoso! Guardamos en sesión los datos (Ajustar según la estructura real que devuelva tu API)
-$_SESSION['user_token'] = $responseData['token'] ?? 'authenticated';
+// ¡Login Exitoso! Validación ESTRICTA del token (Hermes devuelve access_token)
+if (empty($responseData['access_token'])) {
+    // Si llegamos aquí, las credenciales son buenas pero la API no mandó el JWT esperado.
+    echo json_encode(['success' => false, 'message' => 'Login válido, pero Hermes no devolvió un access_token de seguridad.']);
+    exit();
+}
+
+// Guardamos en sesión los datos reales
+$_SESSION['user_token'] = $responseData['access_token'];
+
+// Guardamos el refresh_token de una vez en caso de requerir renovar sesión a futuro
+if (!empty($responseData['refresh_token'])) {
+    $_SESSION['refresh_token'] = $responseData['refresh_token'];
+}
+
+// Guardamos info del usuario (Si Hermes no manda objeto user, dejamos el email)
 $_SESSION['user_data'] = $responseData['user'] ?? ['email' => $email];
 
 // Devolvemos éxito al Frontend

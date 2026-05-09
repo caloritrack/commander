@@ -4,6 +4,7 @@ Estructura de carpetas y archivos:
 |____.htaccess
 |____3ntr4r.php
 |____404.php
+|____ajax_analytics.php
 |____ajax_login.php
 |____assets
 | |____img
@@ -18,6 +19,7 @@ Estructura de carpetas y archivos:
 |____index.php
 |____logout.php
 |____robots.txt
+|____schema.php
 -----
 Contenido de archivos:
 Archivo: ./404.php
@@ -38,17 +40,17 @@ Archivo: ./dashboard.php
 // Nombre del archivo: dashboard.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.1
-// Descripción: Vista principal del Centro de Mando blindada con el middleware de protección de sesiones (auth_protect).
+// Versión: 1.7
+// Descripción: Panel de Analíticas Globales. Se oscurecieron significativamente las tarjetas en el Modo Oscuro (darkbase-950/90) para mejorar el contraste y la estética general.
 
 // 0. Protección de ruta (¡Debe ser lo primero!)
 require_once __DIR__ . '/includes/auth_protect.php';
 
 // 1. Configuramos las variables para el header.php
-$pageTitle = 'Dashboard | Portal de Héroes Caloritrack';
+$pageTitle = 'Analíticas Globales | Portal de Héroes Caloritrack';
 $bodyClass = 'bg-wellness min-h-screen flex font-sans text-gray-800 antialiased overflow-hidden relative';
 
-// CSS Específico del Dashboard
+// CSS Específico del Dashboard y Analíticas
 ob_start();
 ?>
     /* Transición suave para los submenús */
@@ -59,41 +61,153 @@ ob_start();
         overflow: hidden;
     }
     .submenu.open {
-        max-height: 200px; /* Suficiente para el contenido */
+        max-height: 200px;
         opacity: 1;
     }
-    /* Scrollbar estilizado para el panel lateral */
-    ::-webkit-scrollbar {
-        width: 6px;
-    }
-    ::-webkit-scrollbar-track {
-        background: transparent;
-    }
-    ::-webkit-scrollbar-thumb {
-        background: #cbd5e1;
-        border-radius: 10px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-        background: #94a3b8;
+    /* Scrollbar estilizado */
+    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+    /* Estilos para inputs de fecha */
+    .date-filter-input {
+        @apply bg-white/60 border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-calori-500 transition-all;
     }
 <?php
 $extraHead = ob_get_clean();
 
-// JS Específico del Dashboard
+// JS Específico: Chart.js y Lógica de Filtros Asíncrona
 ob_start();
 ?>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
-        // Función simple para alternar los submenús
+        // Función para alternar submenús
         function toggleSubmenu(submenuId, iconId) {
             const submenu = document.getElementById(submenuId);
             const icon = document.getElementById(iconId);
-            
             if (submenu.classList.contains('open')) {
                 submenu.classList.remove('open');
                 icon.classList.remove('rotate-180');
             } else {
                 submenu.classList.add('open');
                 icon.classList.add('rotate-180');
+            }
+        }
+
+        // Variable global para mantener la instancia de la gráfica y poder actualizarla
+        let trendsChartInstance = null;
+
+        // Inicialización de Gráfica de Tendencias (Fase 1)
+        document.addEventListener('DOMContentLoaded', function() {
+            const ctx = document.getElementById('trendsChart').getContext('2d');
+            trendsChartInstance = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: [], // Se llenará dinámicamente
+                    datasets: [{
+                        label: 'Usuarios Únicos',
+                        data: [], // Se llenará dinámicamente
+                        borderColor: '#16a34a',
+                        backgroundColor: 'rgba(22, 163, 74, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 3,
+                        pointBackgroundColor: '#ffffff',
+                        pointBorderColor: '#16a34a',
+                        pointBorderWidth: 2,
+                        pointRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true, grid: { display: false } },
+                        x: { grid: { display: false } }
+                    }
+                }
+            });
+
+            // Cargar datos reales al iniciar la pantalla
+            updateAnalytics();
+        });
+
+        // Función Maestra para consumir nuestro proxy y popular la vista
+        async function updateAnalytics() {
+            const startDate = document.getElementById('startDate').value;
+            const endDate = document.getElementById('endDate').value;
+            const btn = document.getElementById('refreshBtn');
+            const icon = btn.querySelector('i');
+            
+            // Animación de carga visual
+            if(icon) icon.classList.add('animate-spin');
+            if(btn) btn.classList.add('opacity-80', 'cursor-not-allowed');
+
+            try {
+                // 1. Extraer KPIs Globales
+                const resKpis = await fetch(`ajax_analytics.php?action=kpis&startDate=${startDate}&endDate=${endDate}`);
+                const jsonKpis = await resKpis.json();
+                
+                if(jsonKpis.success && jsonKpis.data) {
+                    document.getElementById('val-dau').innerText = jsonKpis.data.unique_users.toLocaleString();
+                    document.getElementById('val-sessions').innerText = jsonKpis.data.total_sessions.toLocaleString();
+                    document.getElementById('val-events').innerText = jsonKpis.data.total_events.toLocaleString();
+                    
+                    const avgMinutesRaw = parseFloat(jsonKpis.data.avg_session_duration_minutes);
+                    if (!isNaN(avgMinutesRaw)) {
+                        const mins = Math.floor(avgMinutesRaw);
+                        const secs = Math.round((avgMinutesRaw - mins) * 60);
+                        document.getElementById('val-duration').innerText = mins + 'm ' + secs + 's';
+                    } else {
+                        document.getElementById('val-duration').innerText = '0m 0s';
+                    }
+                }
+
+                // 2. Extraer Tendencias Temporales (Gráfica)
+                const resTrends = await fetch(`ajax_analytics.php?action=trends&metric=unique_users&interval=day&startDate=${startDate}&endDate=${endDate}`);
+                const jsonTrends = await resTrends.json();
+                
+                if(jsonTrends.success && jsonTrends.data) {
+                    const labels = jsonTrends.data.data.map(item => item.date);
+                    const values = jsonTrends.data.data.map(item => item.value);
+                    
+                    if(trendsChartInstance) {
+                        trendsChartInstance.data.labels = labels;
+                        trendsChartInstance.data.datasets[0].data = values;
+                        trendsChartInstance.update();
+                    }
+                }
+
+                // 3. Extraer Distribución de Pantallas (Navegación)
+                const resDist = await fetch(`ajax_analytics.php?action=distribution&groupBy=screen_name&startDate=${startDate}&endDate=${endDate}`);
+                const jsonDist = await resDist.json();
+
+                if(jsonDist.success && jsonDist.data && jsonDist.data.data) {
+                    let fastingCount = 0;
+                    let kaiCount = 0;
+                    let nutritionCount = 0;
+                    let wellnessCount = 0;
+
+                    jsonDist.data.data.forEach(item => {
+                        if (item.name === 'FastingView') fastingCount = item.count;
+                        if (item.name === 'AICoachView') kaiCount = item.count;
+                        if (item.name === 'NutritionView') nutritionCount = item.count;
+                        if (item.name === 'WellnessView') wellnessCount = item.count;
+                    });
+
+                    document.getElementById('val-nav-fasting').innerText = fastingCount.toLocaleString();
+                    document.getElementById('val-nav-kai').innerText = kaiCount.toLocaleString();
+                    document.getElementById('val-nav-nutrition').innerText = nutritionCount.toLocaleString();
+                    document.getElementById('val-nav-wellness').innerText = wellnessCount.toLocaleString();
+                }
+
+            } catch (error) {
+                console.error("Error al procesar las analíticas:", error);
+            } finally {
+                if(icon) icon.classList.remove('animate-spin');
+                if(btn) btn.classList.remove('opacity-80', 'cursor-not-allowed');
             }
         }
     </script>
@@ -115,140 +229,148 @@ require_once __DIR__ . '/includes/header.php';
 
         <div class="flex-1 overflow-y-auto p-8">
             
-            <div class="mb-8 flex justify-between items-end">
+            <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
                 <div>
-                    <h1 class="text-3xl font-bold text-gray-900 tracking-tight">Bienvenido de vuelta, Arturo.</h1>
-                    <p class="text-gray-500 mt-1">Aquí tienes el resumen del ecosistema Caloritrack de hoy.</p>
+                    <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight transition-colors">Analíticas de Salud</h1>
+                    <p class="text-gray-500 dark:text-gray-400 mt-1 transition-colors">Monitoreo en tiempo real del ecosistema CaloriTrack.</p>
                 </div>
-                <button class="flex items-center px-4 py-2 bg-calori-600 text-white text-sm font-semibold rounded-xl hover:bg-calori-700 transition-colors shadow-sm">
-                    <i class="ph ph-plus mr-2"></i> Nuevo Reporte
-                </button>
-            </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
                 
-                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-gray-500 mb-1">Usuarios Activos (Diarios)</p>
-                            <h3 class="text-3xl font-bold text-gray-900">24,592</h3>
-                        </div>
-                        <div class="p-2 bg-blue-50 text-blue-600 rounded-lg">
-                            <i class="ph ph-users-three text-xl"></i>
-                        </div>
+                <div class="flex items-center gap-3 bg-white/50 dark:bg-darkbase-800/50 backdrop-blur-md p-2 rounded-2xl border border-white/40 dark:border-gray-700 shadow-sm transition-colors">
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-0.5">Inicio</span>
+                        <input type="date" id="startDate" class="bg-transparent border-none text-sm font-semibold focus:ring-0 cursor-pointer dark:text-white" value="2026-05-01">
                     </div>
-                    <div class="mt-4 flex items-center text-sm">
-                        <i class="ph ph-trend-up text-green-500 mr-1"></i>
-                        <span class="text-green-600 font-medium">12.5%</span>
-                        <span class="text-gray-400 ml-2">vs semana anterior</span>
+                    <div class="w-px h-8 bg-gray-200 dark:bg-gray-700"></div>
+                    <div class="flex flex-col">
+                        <span class="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-0.5">Fin</span>
+                        <input type="date" id="endDate" class="bg-transparent border-none text-sm font-semibold focus:ring-0 cursor-pointer dark:text-white" value="2026-05-08">
                     </div>
-                </div>
-
-                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-gray-500 mb-1">Sincronizaciones Apple Health</p>
-                            <h3 class="text-3xl font-bold text-gray-900">18,204</h3>
-                        </div>
-                        <div class="p-2 bg-calori-50 text-calori-600 rounded-lg">
-                            <i class="ph ph-heartbeat text-xl"></i>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex items-center text-sm">
-                        <i class="ph ph-trend-up text-green-500 mr-1"></i>
-                        <span class="text-green-600 font-medium">8.2%</span>
-                        <span class="text-gray-400 ml-2">hoy</span>
-                    </div>
-                </div>
-
-                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-gray-500 mb-1">Estado Kai (IA)</p>
-                            <h3 class="text-3xl font-bold text-gray-900">Óptimo</h3>
-                        </div>
-                        <div class="p-2 bg-purple-50 text-purple-600 rounded-lg">
-                            <i class="ph ph-brain text-xl"></i>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex items-center text-sm">
-                        <span class="flex w-2 h-2 bg-green-500 rounded-full mr-2"></span>
-                        <span class="text-gray-500">Correlaciones activas</span>
-                    </div>
-                </div>
-
-                <div class="bg-white/70 backdrop-blur-lg border border-white/40 p-6 rounded-2xl shadow-sm hover:shadow-md transition-shadow">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <p class="text-sm font-medium text-gray-500 mb-1">Uptime de Servidores</p>
-                            <h3 class="text-3xl font-bold text-gray-900">99.99%</h3>
-                        </div>
-                        <div class="p-2 bg-gray-100 text-gray-600 rounded-lg">
-                            <i class="ph ph-hard-drives text-xl"></i>
-                        </div>
-                    </div>
-                    <div class="mt-4 flex items-center text-sm">
-                        <span class="text-gray-500">Heimdall & Hermes reportando</span>
-                    </div>
-                </div>
-
-            </div>
-
-            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                <div class="lg:col-span-2 bg-white/70 backdrop-blur-lg border border-white/40 rounded-2xl p-6 shadow-sm">
-                    <div class="flex justify-between items-center mb-6">
-                        <h2 class="text-lg font-bold text-gray-900">Adopción de Pilares de Salud</h2>
-                        <button class="text-gray-400 hover:text-gray-600"><i class="ph ph-dots-three text-xl"></i></button>
-                    </div>
-                    <div class="h-64 w-full border-2 border-dashed border-gray-200 rounded-xl flex flex-col items-center justify-center text-gray-400 bg-gray-50/50">
-                        <i class="ph ph-chart-line-up text-4xl mb-2 text-calori-300"></i>
-                        <p class="text-sm font-medium">Área reservada para gráfico de datos interactivo</p>
-                        <p class="text-xs text-gray-400 mt-1">(Ej. Librería Chart.js o D3)</p>
-                    </div>
-                </div>
-
-                <div class="bg-white/70 backdrop-blur-lg border border-white/40 rounded-2xl p-6 shadow-sm">
-                    <h2 class="text-lg font-bold text-gray-900 mb-6">Actividad del Equipo</h2>
-                    <div class="space-y-6">
-                        <div class="flex">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-bold text-xs">OR</div>
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-gray-900">Orion <span class="font-normal text-gray-500">subió una nueva build de iOS.</span></p>
-                                <p class="text-xs text-gray-400 mt-1">Hace 2 horas</p>
-                            </div>
-                        </div>
-                        <div class="flex">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-purple-100 flex items-center justify-center text-purple-600 font-bold text-xs">GE</div>
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-gray-900">Genesis <span class="font-normal text-gray-500">aprobó arquitectura del módulo de sueño.</span></p>
-                                <p class="text-xs text-gray-400 mt-1">Hace 4 horas</p>
-                            </div>
-                        </div>
-                        <div class="flex">
-                            <div class="flex-shrink-0 mr-4">
-                                <div class="w-8 h-8 rounded-full bg-green-100 flex items-center justify-center text-green-600 font-bold text-xs">EM</div>
-                            </div>
-                            <div>
-                                <p class="text-sm font-medium text-gray-900">Empath <span class="font-normal text-gray-500">actualizó componentes UI.</span></p>
-                                <p class="text-xs text-gray-400 mt-1">Hace 5 horas</p>
-                            </div>
-                        </div>
-                    </div>
-                    <button class="w-full mt-6 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-600 hover:bg-gray-50 transition-colors">
-                        Ver todo el registro
+                    <button id="refreshBtn" onclick="updateAnalytics()" class="ml-2 p-2.5 bg-calori-600 text-white rounded-xl hover:bg-calori-700 transition-colors shadow-lg shadow-calori-600/20">
+                        <i class="ph ph-arrows-clockwise font-bold"></i>
                     </button>
                 </div>
             </div>
 
+            <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Usuarios Activos (DAU)</p>
+                            <h3 id="val-dau" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                        </div>
+                        <div class="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                            <i class="ph ph-users-three text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Sesiones Totales</p>
+                            <h3 id="val-sessions" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                        </div>
+                        <div class="p-2 bg-calori-50 dark:bg-calori-900/20 text-calori-600 dark:text-calori-400 rounded-lg">
+                            <i class="ph ph-fingerprint text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Interacciones (Eventos)</p>
+                            <h3 id="val-events" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                        </div>
+                        <div class="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg">
+                            <i class="ph ph-cursor-click text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                    <div class="flex justify-between items-start">
+                        <div>
+                            <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Promedio de Sesión</p>
+                            <h3 id="val-duration" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                        </div>
+                        <div class="p-2 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-lg">
+                            <i class="ph ph-clock text-xl"></i>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-8">
+                <h2 class="text-lg font-bold text-gray-900 dark:text-white mb-4 px-1">Radar de Adopción (Visitas por Pantalla)</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Zona de Ayuno</p>
+                                <h3 id="val-nav-fasting" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                            </div>
+                            <div class="p-2 bg-calori-50 dark:bg-calori-900/20 text-calori-600 dark:text-calori-400 rounded-lg">
+                                <i class="ph ph-timer text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Conexión con KAI (IA)</p>
+                                <h3 id="val-nav-kai" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                            </div>
+                            <div class="p-2 bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 rounded-lg">
+                                <i class="ph ph-brain text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Radar Nutricional</p>
+                                <h3 id="val-nav-nutrition" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                            </div>
+                            <div class="p-2 bg-green-50 dark:bg-green-900/20 text-green-600 dark:text-green-400 rounded-lg">
+                                <i class="ph ph-apple-logo text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm hover:shadow-md transition-all">
+                        <div class="flex justify-between items-start">
+                            <div>
+                                <p class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Oasis Wellness</p>
+                                <h3 id="val-nav-wellness" class="text-3xl font-bold text-gray-900 dark:text-white">--</h3>
+                            </div>
+                            <div class="p-2 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-lg">
+                                <i class="ph ph-drop text-xl"></i>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 gap-6">
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-900 dark:text-white">Tendencias de Adopción</h2>
+                            <p class="text-xs text-gray-500 dark:text-gray-400">Evolución cronológica de usuarios únicos y sesiones.</p>
+                        </div>
+                    </div>
+                    <div class="h-80 w-full">
+                        <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+            </div>
         </div>
     </main>
 
 <?php
-// 5. Incluimos Footer Global
 require_once __DIR__ . '/includes/footer.php';
 ?>-----
 Archivo: ./index.php
@@ -264,8 +386,8 @@ Archivo: ./ajax_login.php
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.0
-// Descripción: Controlador AJAX que recibe credenciales, arma el payload JSON y consume el endpoint de la API oficial mediante cURL. Maneja la creación de la sesión tras un login exitoso.
+// Versión: 1.2
+// Descripción: Controlador AJAX para login. Se corrigió el mapeo de la respuesta de Hermes para leer correctamente 'access_token' en lugar de 'token'.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -317,12 +439,138 @@ if ($error || $httpCode !== 200) {
 
 $responseData = json_decode($response, true);
 
-// ¡Login Exitoso! Guardamos en sesión los datos (Ajustar según la estructura real que devuelva tu API)
-$_SESSION['user_token'] = $responseData['token'] ?? 'authenticated';
+// ¡Login Exitoso! Validación ESTRICTA del token (Hermes devuelve access_token)
+if (empty($responseData['access_token'])) {
+    // Si llegamos aquí, las credenciales son buenas pero la API no mandó el JWT esperado.
+    echo json_encode(['success' => false, 'message' => 'Login válido, pero Hermes no devolvió un access_token de seguridad.']);
+    exit();
+}
+
+// Guardamos en sesión los datos reales
+$_SESSION['user_token'] = $responseData['access_token'];
+
+// Guardamos el refresh_token de una vez en caso de requerir renovar sesión a futuro
+if (!empty($responseData['refresh_token'])) {
+    $_SESSION['refresh_token'] = $responseData['refresh_token'];
+}
+
+// Guardamos info del usuario (Si Hermes no manda objeto user, dejamos el email)
 $_SESSION['user_data'] = $responseData['user'] ?? ['email' => $email];
 
 // Devolvemos éxito al Frontend
 echo json_encode(['success' => true]);
+?>-----
+Archivo: ./ajax_analytics.php
+<?php
+// Nombre del archivo: ajax_analytics.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.3
+// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'schema' para consultar el auto-descubrimiento de la API de Hermes.
+
+require_once __DIR__ . '/includes/session.php';
+
+// Función interna para guardar logs
+function debugLog($message) {
+    $logDir = __DIR__ . '/logs';
+    $logFile = $logDir . '/analytics_debug.log';
+    
+    // Verificamos si la carpeta existe, si no, la creamos (con permisos seguros)
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0755, true);
+    }
+    
+    $date = date('Y-m-d H:i:s');
+    // Escribimos al final del archivo
+    file_put_contents($logFile, "[$date] " . $message . PHP_EOL, FILE_APPEND);
+}
+
+// Indicamos que devolveremos JSON
+header('Content-Type: application/json');
+
+// Solo aceptamos peticiones GET para lectura de datos
+if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
+    debugLog("Error: Método HTTP no permitido (" . $_SERVER['REQUEST_METHOD'] . ")");
+    echo json_encode(['success' => false, 'message' => 'Método no permitido']);
+    exit();
+}
+
+// Verificamos que el héroe esté autenticado
+if (!isset($_SESSION['user_token'])) {
+    debugLog("Error: Intento de acceso sin token de sesión activo.");
+    echo json_encode(['success' => false, 'message' => 'No autorizado. Inicie sesión nuevamente.']);
+    exit();
+}
+
+$token = $_SESSION['user_token'];
+$action = $_GET['action'] ?? '';
+$startDate = $_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'));
+$endDate = $_GET['endDate'] ?? date('Y-m-d');
+
+$apiUrl = 'https://api.caloritrack.com';
+$endpoint = '';
+
+// Ruteo interno de la petición según lo que pida el Dashboard
+if ($action === 'kpis') {
+    $endpoint = "/admin/analytics/kpis?startDate={$startDate}&endDate={$endDate}";
+} elseif ($action === 'trends') {
+    $metric = $_GET['metric'] ?? 'unique_users';
+    $interval = $_GET['interval'] ?? 'day';
+    $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric={$metric}";
+} elseif ($action === 'distribution') {
+    $groupBy = $_GET['groupBy'] ?? 'screen_name';
+    $endpoint = "/admin/analytics/events/distribution?startDate={$startDate}&endDate={$endDate}&groupBy={$groupBy}";
+} elseif ($action === 'schema') {
+    // Nuevo endpoint de auto-descubrimiento
+    $endpoint = "/admin/analytics/schema";
+} else {
+    debugLog("Error: Acción inválida solicitada ('$action')");
+    echo json_encode(['success' => false, 'message' => 'Acción inválida solicitada al proxy']);
+    exit();
+}
+
+$fullUrl = $apiUrl . $endpoint;
+debugLog("--- INICIANDO PETICIÓN A HERMES ---");
+debugLog("URL Destino: " . $fullUrl);
+
+// Enmascaramos el token un poco por seguridad en los logs
+$maskedToken = substr($token, 0, 10) . '...' . substr($token, -10);
+debugLog("Token enviado: Bearer " . $maskedToken);
+
+// Consumo de la API de Hermes mediante cURL
+$ch = curl_init($fullUrl);
+curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_HTTPHEADER, [
+    'Authorization: Bearer ' . $token,
+    'Accept: application/json'
+]);
+
+$response = curl_exec($ch);
+$httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+$error = curl_error($ch);
+curl_close($ch);
+
+debugLog("Código HTTP recibido: " . $httpCode);
+
+// Manejo de errores de red o HTTP
+if ($error || $httpCode !== 200) {
+    debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    // Si falla, enviamos el error al frontend para depuración
+    echo json_encode([
+        'success' => false, 
+        'message' => 'Error al conectar con los servidores de Hermes.',
+        'debug' => ['error' => $error, 'http_code' => $httpCode]
+    ]);
+    exit();
+}
+
+// Guardamos un extracto de la respuesta para no saturar el log si es inmensa
+debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "..."); 
+debugLog("--- FIN DE LA PETICIÓN ---");
+
+// Decodificamos la respuesta de Hermes y la empaquetamos
+$responseData = json_decode($response, true);
+echo json_encode(['success' => true, 'data' => $responseData]);
 ?>-----
 Archivo: ./3ntr4r.php
 <?php
@@ -449,45 +697,66 @@ Archivo: ./includes/topbar.php
 // Nombre del archivo: includes/topbar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.1
-// Descripción: Se agregó el botón de Cerrar Sesión enrutado al archivo de destrucción de variables (logout.php) para blindar el flujo de autenticación completo.
+// Versión: 1.2
+// Descripción: Barra superior. Se integraron los botones de control para colapsar el sidebar y alternar entre modo claro y oscuro.
+
 ?>
-        <header class="h-20 bg-white/40 backdrop-blur-md border-b border-white/50 flex items-center justify-between px-8 z-10">
+        <header class="h-20 bg-white/40 dark:bg-darkbase-900/40 backdrop-blur-md border-b border-white/50 dark:border-gray-800 flex items-center justify-between px-8 z-10 transition-colors">
             
-            <div class="flex-1 max-w-xl">
-                <div class="relative">
+            <div class="flex items-center gap-4 flex-1 max-w-xl">
+                <button onclick="toggleSidebar()" class="p-2 text-gray-500 hover:bg-white/50 dark:hover:bg-gray-800 rounded-xl transition-all">
+                    <i class="ph ph-list text-2xl"></i>
+                </button>
+
+                <div class="relative w-full">
                     <i class="ph ph-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-lg"></i>
-                    <input type="text" placeholder="Buscar usuarios, métricas o comandos rápidos (⌘K)..." 
-                           class="w-full bg-white/60 border border-gray-200 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-calori-500 focus:bg-white transition-all">
+                    <input type="text" placeholder="Buscar métricas o comandos (⌘K)..." 
+                           class="w-full bg-white/60 dark:bg-gray-800/60 border border-gray-200 dark:border-gray-700 rounded-full py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-calori-500 transition-all dark:text-white">
                 </div>
             </div>
 
-            <div class="flex items-center space-x-5 ml-4">
+            <div class="flex items-center space-x-4 ml-4">
                 
-                <a href="logout.php" class="relative p-2 text-red-400 hover:text-red-600 transition-colors rounded-full hover:bg-white/50" title="Cerrar Sesión">
-                    <i class="ph ph-sign-out text-xl"></i>
-                </a>
-
-                <button class="relative p-2 text-gray-400 hover:text-gray-600 transition-colors rounded-full hover:bg-white/50" title="Notificaciones">
-                    <i class="ph ph-bell text-xl"></i>
-                    <span class="absolute top-1 right-1 w-2.5 h-2.5 bg-red-500 border-2 border-white rounded-full"></span>
+                <button onclick="toggleTheme()" class="p-2.5 text-gray-500 dark:text-yellow-400 hover:bg-white/50 dark:hover:bg-gray-800 rounded-xl transition-all" title="Cambiar Tema">
+                    <i class="ph ph-sun-dim hidden dark:block text-xl"></i>
+                    <i class="ph ph-moon block dark:hidden text-xl"></i>
                 </button>
-                
-                <div class="w-px h-6 bg-gray-200"></div>
 
-                <button class="flex items-center space-x-3 text-left focus:outline-none hover:opacity-80 transition-opacity">
+                <button onclick="showLogoutModal()" class="p-2.5 text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-xl transition-all" title="Cerrar Sesión">
+                    <i class="ph ph-sign-out text-xl"></i>
+                </button>
+
+                <div class="w-px h-6 bg-gray-200 dark:bg-gray-700"></div>
+
+                <div class="flex items-center space-x-3 text-left">
                     <div class="relative">
-                        <img src="https://i.pravatar.cc/150?u=arturo" alt="Avatar" class="w-10 h-10 rounded-full border-2 border-white shadow-sm">
-                        <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
+                        <img src="https://i.pravatar.cc/150?u=arturo" alt="Avatar" class="w-10 h-10 rounded-full border-2 border-white dark:border-gray-700 shadow-sm">
+                        <div class="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white dark:border-gray-800 rounded-full"></div>
                     </div>
                     <div class="hidden md:block">
-                        <p class="text-sm font-bold text-gray-900 leading-tight">Arturo</p>
-                        <p class="text-xs text-calori-600 font-medium">CEO & CPO</p>
+                        <p class="text-sm font-bold text-gray-900 dark:text-white leading-tight">Arturo</p>
+                        <p class="text-xs text-calori-600 dark:text-calori-500 font-medium">CEO & CPO</p>
                     </div>
-                    <i class="ph ph-caret-down text-gray-400 text-xs hidden md:block"></i>
-                </button>
+                </div>
             </div>
-        </header>-----
+        </header>
+
+        <script>
+            function toggleSidebar() {
+                const sidebar = document.getElementById('main-sidebar');
+                sidebar.classList.toggle('sidebar-collapsed');
+            }
+
+            function toggleTheme() {
+                if (document.documentElement.classList.contains('dark')) {
+                    document.documentElement.classList.remove('dark');
+                    localStorage.setItem('theme', 'light');
+                } else {
+                    document.documentElement.classList.add('dark');
+                    localStorage.setItem('theme', 'dark');
+                }
+            }
+        </script>-----
 Archivo: ./includes/session.php
 <?php
 // Nombre del archivo: includes/session.php
@@ -513,21 +782,23 @@ Archivo: ./includes/header.php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.4
-// Descripción: Cabecera global del portal. Se implementaron variables dinámicas ($pageTitle, $bodyClass, $extraHead) para soportar diferentes layouts (Login vs Dashboard) manteniendo la misma configuración base de Tailwind CSS y la paleta de colores corporativa.
+// Versión: 1.5
+// Descripción: Cabecera global. Se activó el soporte para Dark Mode en la configuración de Tailwind y se añadió un script de detección de tema para evitar el parpadeo de luz al cargar.
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
 ?>
 <!DOCTYPE html>
-<html lang="es">
+<html lang="es" class="">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($pageTitle); ?></title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
+        // Configuración de Tailwind con soporte para Modo Oscuro y Colores Corporativos
         tailwind.config = {
+            darkMode: 'class',
             theme: {
                 extend: {
                     colors: {
@@ -544,6 +815,11 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
                             pure: '#FFFFFF',
                             softgray: '#A9A9A9',
                             gold: '#FFD700'
+                        },
+                        darkbase: {
+                            800: '#1e293b',
+                            900: '#0f172a',
+                            950: '#020617'
                         }
                     },
                     fontFamily: {
@@ -552,6 +828,13 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
                 }
             }
         }
+
+        // Script de Prevención de Flash: Aplicar tema antes de renderizar
+        if (localStorage.getItem('theme') === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+            document.documentElement.classList.add('dark');
+        } else {
+            document.documentElement.classList.remove('dark');
+        }
     </script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
@@ -559,38 +842,79 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
             from { opacity: 0; transform: translateY(10px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        .animate-fade-in {
-            animation: fadeIn 0.6s ease-out forwards;
-        }
+        .animate-fade-in { animation: fadeIn 0.6s ease-out forwards; }
+        
         .bg-wellness {
             background: linear-gradient(135deg, #f0fdf4 0%, #dcfce7 50%, #e0f2fe 100%);
         }
-        /* Inyección de estilos dinámicos por vista */
+        .dark .bg-wellness {
+            background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        }
+
+        /* Soporte para Sidebar Colapsable */
+        #main-sidebar { transition: width 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+        .sidebar-collapsed { width: 80px !important; }
+        .sidebar-collapsed .nav-label, .sidebar-collapsed .sidebar-header-text { display: none; }
+        .sidebar-collapsed .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
+        .sidebar-collapsed .nav-item i { margin-right: 0; font-size: 1.5rem; }
+
         <?php echo $extraHead ?? ''; ?>
     </style>
 </head>
-<body class="<?php echo htmlspecialchars($bodyClass); ?>">-----
+<body class="<?php echo htmlspecialchars($bodyClass); ?> dark:text-gray-100 transition-colors duration-300">-----
 Archivo: ./includes/footer.php
 <?php
 // Nombre del archivo: includes/footer.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.3
-// Descripción: Scripts de interacción base. Se reescribió handleLogin para consumir ajax_login.php de forma asíncrona usando fetch API, manejando errores de servidor y mostrando retroalimentación dinámica al usuario sin recargar la página.
+// Versión: 1.4
+// Descripción: Pie de página global. Se añadió el aviso legal con año dinámico y el sistema de Modal de Confirmación para el cierre de sesión.
+
 ?>
+    <footer class="absolute bottom-4 right-8 z-0 text-[10px] text-gray-400 dark:text-gray-600 font-medium">
+        &copy; <?php echo date('Y'); ?> CaloriTrack &reg;, Todos los Derechos Reservados.
+    </footer>
+
+    <div id="logoutModal" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
+        <div class="absolute inset-0 bg-black/20 dark:bg-black/60 backdrop-blur-sm" onclick="hideLogoutModal()"></div>
+        <div class="bg-white/90 dark:bg-darkbase-900/90 backdrop-blur-xl border border-white/50 dark:border-gray-700 w-full max-w-sm rounded-3xl p-8 shadow-2xl relative animate-fade-in">
+            <div class="text-center">
+                <div class="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4">
+                    <i class="ph ph-warning-circle text-3xl"></i>
+                </div>
+                <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">¿Cerrar Sesión?</h3>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-8">¿Estás seguro de que deseas salir del Centro de Mando, Arturo? La conexión segura se terminará.</p>
+                
+                <div class="flex gap-3">
+                    <button onclick="hideLogoutModal()" class="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-bold rounded-2xl hover:bg-gray-200 transition-colors">
+                        Cancelar
+                    </button>
+                    <a href="logout.php" class="flex-1 py-3 px-4 bg-red-500 text-white font-bold rounded-2xl hover:bg-red-600 shadow-lg shadow-red-500/30 transition-all text-center">
+                        Sí, salir
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        function showLogoutModal() {
+            document.getElementById('logoutModal').classList.remove('hidden');
+        }
+        function hideLogoutModal() {
+            document.getElementById('logoutModal').classList.add('hidden');
+        }
+
+        // --- Funciones de UI Heredadas ---
         function togglePassword() {
             const passwordInput = document.getElementById('password');
             const toggleIcon = document.getElementById('toggleIcon');
-            
             if (passwordInput.type === 'password') {
                 passwordInput.type = 'text';
-                toggleIcon.classList.remove('ph-eye');
-                toggleIcon.classList.add('ph-eye-slash');
+                toggleIcon.classList.replace('ph-eye', 'ph-eye-slash');
             } else {
                 passwordInput.type = 'password';
-                toggleIcon.classList.remove('ph-eye-slash');
-                toggleIcon.classList.add('ph-eye');
+                toggleIcon.classList.replace('ph-eye-slash', 'ph-eye');
             }
         }
 
@@ -598,46 +922,31 @@ Archivo: ./includes/footer.php
             event.preventDefault();
             const btn = event.target.querySelector('button[type="submit"]');
             const originalText = btn.innerHTML;
-            
-            // Elementos para mostrar error
             const errorDiv = document.getElementById('errorMessage');
             const errorSpan = errorDiv.querySelector('span');
-
-            // Capturamos valores. JS mapea 'username' (id del HTML) a la llave 'email' que exige tu API
             const email = document.getElementById('username').value;
             const password = document.getElementById('password').value;
 
-            // Ocultamos errores previos
             errorDiv.classList.add('hidden');
-            
-            // Estado de carga (Spin)
             btn.innerHTML = '<i class="ph ph-spinner animate-spin text-xl"></i>';
             btn.classList.add('opacity-90', 'cursor-not-allowed');
             
             try {
-                // Petición al backend intermedio PHP
                 const response = await fetch('ajax_login.php', {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ email: email, password: password })
                 });
-
                 const data = await response.json();
-
                 if (data.success) {
-                    // Login exitoso, PHP ya creó la sesión. Redirigimos.
                     window.location.href = 'dashboard.php';
                 } else {
-                    // Restaurar botón y mostrar error de Heimdall
                     btn.innerHTML = originalText;
                     btn.classList.remove('opacity-90', 'cursor-not-allowed');
                     errorSpan.textContent = data.message;
                     errorDiv.classList.remove('hidden');
                 }
             } catch (error) {
-                // Error de red
                 btn.innerHTML = originalText;
                 btn.classList.remove('opacity-90', 'cursor-not-allowed');
                 errorSpan.textContent = 'Error de conexión con el servidor.';
@@ -669,67 +978,75 @@ Archivo: ./includes/sidebar.php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-08
-// Versión: 1.0
-// Descripción: Panel lateral (Sidebar) de navegación para el Centro de Mando. Mantiene el logo oficial y contiene la estructura del menú principal y submenús expandibles.
+// Versión: 1.4
+// Descripción: Panel lateral. Se agregó el menú principal "Analíticas" y su submenú "Schema" para consultar la estructura de datos dinámicos.
+
 ?>
-    <aside class="w-64 bg-white/80 backdrop-blur-xl border-r border-white/50 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)]">
-        <div class="h-20 flex items-center px-6 border-b border-gray-100/50">
-            <div class="w-8 h-8 flex items-center justify-center mr-3">
-                <img src="assets/img/caloritrack-Logo-120-x-120-transparente.png" alt="CaloriTrack Logo" class="w-full h-full object-contain">
+    <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
+        <div class="h-20 flex items-center px-6 border-b border-gray-100/50 dark:border-gray-800">
+            <div class="w-8 h-8 flex items-center justify-center mr-3 shrink-0">
+                <img src="assets/img/caloritrack-Logo-120-x-120-transparente.png" alt="Logo" class="w-full h-full object-contain">
             </div>
-            <span class="text-xl font-bold tracking-tight text-gray-900">CaloriTrack</span>
+            <span class="text-xl font-bold tracking-tight text-gray-900 dark:text-white sidebar-header-text">CaloriTrack</span>
         </div>
 
         <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-            <a href="#" class="flex items-center px-3 py-2.5 bg-calori-50 text-calori-700 rounded-xl font-medium transition-colors">
+            <a href="dashboard.php" class="nav-item flex items-center px-3 py-2.5 bg-calori-50 dark:bg-calori-900/20 text-calori-700 dark:text-calori-400 rounded-xl font-medium transition-colors">
                 <i class="ph ph-squares-four text-xl mr-3"></i>
-                Dashboard Global
-            </a>
-
-            <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
-                <i class="ph ph-users text-xl mr-3"></i>
-                Usuarios y Salud
+                <span class="nav-label">Dashboard Global</span>
             </a>
 
             <div>
-                <button onclick="toggleSubmenu('submenu-kai', 'icon-kai')" class="w-full flex items-center justify-between px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors focus:outline-none">
+                <button onclick="toggleSubmenu('submenu-analytics', 'icon-analytics')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-chart-line-up text-xl mr-3"></i>
+                        <span class="nav-label">Analíticas</span>
+                    </div>
+                    <i id="icon-analytics" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
+                </button>
+                <div id="submenu-analytics" class="submenu pl-11 pr-3">
+                    <a href="schema.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Schema (Auto-descubrimiento)</a>
+                </div>
+            </div>
+
+            <a href="#" class="nav-item flex items-center px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors">
+                <i class="ph ph-users text-xl mr-3"></i>
+                <span class="nav-label">Usuarios y Salud</span>
+            </a>
+
+            <div>
+                <button onclick="toggleSubmenu('submenu-kai', 'icon-kai')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
                     <div class="flex items-center">
                         <i class="ph ph-brain text-xl mr-3"></i>
-                        Cerebro Kai (IA)
+                        <span class="nav-label">Cerebro Kai (IA)</span>
                     </div>
-                    <i id="icon-kai" class="ph ph-caret-down text-sm transition-transform duration-300"></i>
+                    <i id="icon-kai" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-kai" class="submenu pl-11 pr-3">
-                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Modelos de Correlación</a>
-                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Base de Conocimiento</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Modelos</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Conocimiento</a>
                 </div>
             </div>
 
             <div>
-                <button onclick="toggleSubmenu('submenu-eng', 'icon-eng')" class="w-full flex items-center justify-between px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors focus:outline-none">
+                <button onclick="toggleSubmenu('submenu-eng', 'icon-eng')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
                     <div class="flex items-center">
                         <i class="ph ph-cpu text-xl mr-3"></i>
-                        Ingeniería e Infra.
+                        <span class="nav-label">Ingeniería e Infra.</span>
                     </div>
-                    <i id="icon-eng" class="ph ph-caret-down text-sm transition-transform duration-300"></i>
+                    <i id="icon-eng" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-eng" class="submenu open pl-11 pr-3">
-                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bases de Datos (Heimdall)</a>
-                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">APIs y Rutas (Hermes)</a>
-                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Releases iOS (Orion)</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Heimdall</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Hermes</a>
                 </div>
             </div>
-
-            <a href="#" class="flex items-center px-3 py-2.5 text-gray-600 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
-                <i class="ph ph-palette text-xl mr-3"></i>
-                Activos Visuales (Helios)
-            </a>
         </nav>
 
-        <div class="p-4 border-t border-gray-100/50">
-            <a href="#" class="flex items-center px-3 py-2.5 text-gray-500 hover:bg-gray-50 hover:text-gray-900 rounded-xl font-medium transition-colors">
+        <div class="p-4 border-t border-gray-100/50 dark:border-gray-800">
+            <a href="#" class="nav-item flex items-center px-3 py-2.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors">
                 <i class="ph ph-gear text-xl mr-3"></i>
-                Configuración
+                <span class="nav-label">Configuración</span>
             </a>
         </div>
     </aside>-----
@@ -748,6 +1065,183 @@ Consideraciones base.md
 /_other
 /tmp
 /logs-----
+Archivo: ./schema.php
+<?php
+// Nombre del archivo: schema.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-05-08
+// Versión: 1.1
+// Descripción: Pantalla de Auto-descubrimiento del Esquema. Se añadió una tarjeta inferior que expone el JSON crudo con un botón de copiado rápido al portapapeles.
+
+// 0. Protección de ruta
+require_once __DIR__ . '/includes/auth_protect.php';
+
+// 1. Configuramos las variables para el header
+$pageTitle = 'Schema de Analíticas | Portal de Héroes Caloritrack';
+$bodyClass = 'bg-wellness min-h-screen flex font-sans text-gray-800 antialiased overflow-hidden relative';
+
+// CSS y JS Específico
+ob_start();
+?>
+    <style>
+        .submenu { transition: max-height 0.3s ease-in-out, opacity 0.3s ease-in-out; max-height: 0; opacity: 0; overflow: hidden; }
+        .submenu.open { max-height: 200px; opacity: 1; }
+        ::-webkit-scrollbar { width: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 10px; }
+        ::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+    </style>
+    <script>
+        function toggleSubmenu(submenuId, iconId) {
+            const submenu = document.getElementById(submenuId);
+            const icon = document.getElementById(iconId);
+            if (submenu.classList.contains('open')) {
+                submenu.classList.remove('open');
+                icon.classList.remove('rotate-180');
+            } else {
+                submenu.classList.add('open');
+                icon.classList.add('rotate-180');
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', async function() {
+            const container = document.getElementById('schemaContainer');
+            const loader = document.getElementById('schemaLoader');
+            
+            try {
+                const res = await fetch('ajax_analytics.php?action=schema');
+                const json = await res.json();
+                
+                if(json.success && json.data) {
+                    // Renderizamos las listas visuales
+                    renderList('listCategories', json.data.categories, 'ph-folder-notch', 'text-blue-500', 'bg-blue-50 dark:bg-blue-900/20');
+                    renderList('listEvents', json.data.events, 'ph-cursor-click', 'text-purple-500', 'bg-purple-50 dark:bg-purple-900/20');
+                    renderList('listMetadata', json.data.metadata_keys, 'ph-tag', 'text-green-500', 'bg-green-50 dark:bg-green-900/20');
+                    
+                    // Inyectamos el JSON crudo en la nueva tarjeta
+                    document.getElementById('rawSchemaContent').textContent = JSON.stringify(json.data, null, 4);
+
+                    loader.classList.add('hidden');
+                    container.classList.remove('hidden');
+                }
+            } catch (error) {
+                console.error("Error al cargar el schema:", error);
+            }
+        });
+
+        function renderList(elementId, items, icon, iconColor, bgBadge) {
+            const el = document.getElementById(elementId);
+            el.innerHTML = '';
+            items.forEach(item => {
+                el.innerHTML += `
+                    <div class="flex items-center p-3 mb-3 bg-gray-50 dark:bg-darkbase-900 rounded-xl border border-gray-100 dark:border-gray-800 transition-colors">
+                        <div class="p-1.5 rounded-lg ${bgBadge} mr-3">
+                            <i class="ph ${icon} ${iconColor} text-lg"></i>
+                        </div>
+                        <span class="text-sm font-medium text-gray-700 dark:text-gray-300 font-mono">${item}</span>
+                    </div>
+                `;
+            });
+        }
+
+        // Nueva función para copiar el JSON al portapapeles
+        function copySchemaToClipboard() {
+            const rawText = document.getElementById('rawSchemaContent').textContent;
+            navigator.clipboard.writeText(rawText).then(() => {
+                const btnIcon = document.getElementById('copyIcon');
+                
+                // Efecto visual de éxito
+                btnIcon.classList.replace('ph-copy', 'ph-check-circle');
+                btnIcon.classList.replace('text-gray-400', 'text-green-500');
+                
+                // Restauramos el ícono después de 2 segundos
+                setTimeout(() => {
+                    btnIcon.classList.replace('ph-check-circle', 'ph-copy');
+                    btnIcon.classList.replace('text-green-500', 'text-gray-400');
+                }, 2000);
+            }).catch(err => {
+                console.error('Error al copiar al portapapeles: ', err);
+            });
+        }
+    </script>
+<?php
+$extraHead = ob_get_clean();
+$extraScripts = '';
+
+// 2. Incluimos Header Global
+require_once __DIR__ . '/includes/header.php';
+?>
+
+    <div class="absolute top-[-10%] left-[20%] w-96 h-96 bg-green-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse pointer-events-none"></div>
+    <div class="absolute bottom-[-10%] right-[10%] w-[500px] h-[500px] bg-blue-200 rounded-full mix-blend-multiply filter blur-3xl opacity-40 animate-pulse pointer-events-none" style="animation-delay: 2s;"></div>
+
+    <?php require_once __DIR__ . '/includes/sidebar.php'; ?>
+
+    <main class="flex-1 flex flex-col h-screen overflow-hidden z-10 relative">
+        
+        <?php require_once __DIR__ . '/includes/topbar.php'; ?>
+
+        <div class="flex-1 overflow-y-auto p-8">
+            
+            <div class="mb-8">
+                <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight transition-colors">Diccionario de Datos (Schema)</h1>
+                <p class="text-gray-500 dark:text-gray-400 mt-1 transition-colors">Estructura autodescubierta en tiempo real desde la API de Hermes.</p>
+            </div>
+
+            <div id="schemaLoader" class="flex flex-col items-center justify-center h-64">
+                <i class="ph ph-spinner animate-spin text-4xl text-calori-500 mb-4"></i>
+                <p class="text-sm text-gray-500 dark:text-gray-400">Consultando la estructura de Hermes...</p>
+            </div>
+
+            <div id="schemaContainer" class="hidden grid grid-cols-1 md:grid-cols-3 gap-6">
+                
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm transition-all">
+                    <div class="flex items-center mb-6">
+                        <i class="ph ph-folder-open text-2xl text-blue-500 mr-2"></i>
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Categorías</h2>
+                    </div>
+                    <div id="listCategories" class="h-[400px] overflow-y-auto pr-2"></div>
+                </div>
+
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm transition-all">
+                    <div class="flex items-center mb-6">
+                        <i class="ph ph-lightning text-2xl text-purple-500 mr-2"></i>
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Eventos</h2>
+                    </div>
+                    <div id="listEvents" class="h-[400px] overflow-y-auto pr-2"></div>
+                </div>
+
+                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm transition-all">
+                    <div class="flex items-center mb-6">
+                        <i class="ph ph-brackets-curly text-2xl text-green-500 mr-2"></i>
+                        <h2 class="text-lg font-bold text-gray-900 dark:text-white">Llaves de Metadata</h2>
+                    </div>
+                    <div id="listMetadata" class="h-[400px] overflow-y-auto pr-2"></div>
+                </div>
+
+                <div class="md:col-span-3 bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 p-6 rounded-2xl shadow-sm transition-all mt-2">
+                    <div class="flex justify-between items-center mb-4">
+                        <div class="flex items-center">
+                            <i class="ph ph-file-code text-2xl text-gray-500 mr-2"></i>
+                            <h2 class="text-lg font-bold text-gray-900 dark:text-white">Schema Crudo (JSON)</h2>
+                        </div>
+                        <button onclick="copySchemaToClipboard()" class="flex items-center gap-2 px-3 py-1.5 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-600 dark:text-gray-300 rounded-lg transition-colors text-sm font-medium focus:outline-none">
+                            <i id="copyIcon" class="ph ph-copy text-lg text-gray-400"></i> Copiar
+                        </button>
+                    </div>
+                    <div class="bg-gray-50 dark:bg-darkbase-900 p-4 rounded-xl border border-gray-100 dark:border-gray-800 overflow-x-auto">
+                        <pre id="rawSchemaContent" class="text-sm font-mono text-gray-700 dark:text-gray-300"></pre>
+                    </div>
+                </div>
+
+            </div>
+
+        </div>
+    </main>
+
+<?php
+require_once __DIR__ . '/includes/footer.php';
+?>-----
 Archivo: ./robots.txt
 User-agent: *
 Disallow: /-----
