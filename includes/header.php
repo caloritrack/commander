@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.5
-// Descripción: Cabecera global. Se activó el soporte para Dark Mode en la configuración de Tailwind y se añadió un script de detección de tema para evitar el parpadeo de luz al cargar.
+// Fecha: 2026-05-09
+// Versión: 1.7
+// Descripción: Cabecera global. Se agregó el favicon logo-white.png para la pestaña del navegador. Se añadió una regla CSS (.sidebar-collapsed .submenu) para esconder completamente los submenús cuando el panel lateral se colapsa, evitando el desbordamiento de texto.
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
@@ -14,6 +14,9 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?php echo htmlspecialchars($pageTitle); ?></title>
+    
+    <link rel="icon" type="image/png" href="assets/img/logo-white.png">
+    
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         // Configuración de Tailwind con soporte para Modo Oscuro y Colores Corporativos
@@ -77,6 +80,9 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
         .sidebar-collapsed .nav-label, .sidebar-collapsed .sidebar-header-text { display: none; }
         .sidebar-collapsed .nav-item { justify-content: center; padding-left: 0; padding-right: 0; }
         .sidebar-collapsed .nav-item i { margin-right: 0; font-size: 1.5rem; }
+        
+        /* Corrección: Ocultar submenús cuando el sidebar está colapsado */
+        .sidebar-collapsed .submenu { display: none !important; }
 
         <?php echo $extraHead ?? ''; ?>
     </style>

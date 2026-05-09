@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.3
-// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'schema' para consultar el auto-descubrimiento de la API de Hermes.
+// Fecha: 2026-05-09
+// Versión: 1.8
+// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'customers' para consultar el endpoint /admin/dashboard/customers-report conservando todo lo anterior. Se añadió soporte para el parámetro 'page' en la ruta customers.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -43,6 +43,7 @@ $token = $_SESSION['user_token'];
 $action = $_GET['action'] ?? '';
 $startDate = $_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'));
 $endDate = $_GET['endDate'] ?? date('Y-m-d');
+$page = $_GET['page'] ?? 1; // NUEVO: Capturamos la página
 
 $apiUrl = 'https://api.caloritrack.com';
 $endpoint = '';
@@ -60,6 +61,12 @@ if ($action === 'kpis') {
 } elseif ($action === 'schema') {
     // Nuevo endpoint de auto-descubrimiento
     $endpoint = "/admin/analytics/schema";
+} elseif ($action === 'subscriptions') {
+    // Endpoint para el resumen de membresías activas
+    $endpoint = "/admin/dashboard/subscriptions-summary";
+} elseif ($action === 'customers') {
+    // NUEVO: Endpoint para el reporte detallado de clientes con soporte para paginación
+    $endpoint = "/admin/dashboard/customers-report?page={$page}";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");
     echo json_encode(['success' => false, 'message' => 'Acción inválida solicitada al proxy']);
@@ -67,6 +74,7 @@ if ($action === 'kpis') {
 }
 
 $fullUrl = $apiUrl . $endpoint;
+
 debugLog("--- INICIANDO PETICIÓN A HERMES ---");
 debugLog("URL Destino: " . $fullUrl);
 
@@ -92,6 +100,7 @@ debugLog("Código HTTP recibido: " . $httpCode);
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
     debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    
     // Si falla, enviamos el error al frontend para depuración
     echo json_encode([
         'success' => false, 
@@ -102,7 +111,7 @@ if ($error || $httpCode !== 200) {
 }
 
 // Guardamos un extracto de la respuesta para no saturar el log si es inmensa
-debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "..."); 
+debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "...");
 debugLog("--- FIN DE LA PETICIÓN ---");
 
 // Decodificamos la respuesta de Hermes y la empaquetamos

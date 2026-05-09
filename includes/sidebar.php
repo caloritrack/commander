@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.4
-// Descripción: Panel lateral. Se agregó el menú principal "Analíticas" y su submenú "Schema" para consultar la estructura de datos dinámicos.
+// Fecha: 2026-05-09
+// Versión: 1.5
+// Descripción: Panel lateral. Se agregó el menú principal "Analíticas" y su submenú "Schema" para consultar la estructura de datos dinámicos, y ahora el "Reporte de Clientes".
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -29,7 +29,8 @@
                     <i id="icon-analytics" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-analytics" class="submenu pl-11 pr-3">
-                    <a href="schema.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Schema (Auto-descubrimiento)</a>
+                    <a href="schema.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Schema (Data)</a>
+                    <a href="customers.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Reporte de Clientes</a>
                 </div>
             </div>
 

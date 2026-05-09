@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: dashboard.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.7
-// Descripción: Panel de Analíticas Globales. Se oscurecieron significativamente las tarjetas en el Modo Oscuro (darkbase-950/90) para mejorar el contraste y la estética general.
+// Fecha: 2026-05-09
+// Versión: 1.12
+// Descripción: Panel de Analíticas Globales. Se reestructuró la cuadrícula inferior a 3 columnas para añadir la tarjeta de Membresías Activas dinámica y dejar la gráfica en 2 columnas. Conserva el 100% de la funcionalidad base. Se implementó un parche de seguridad en el parseo del JSON para evitar iterar sobre metadatos (success/data) y extraer correctamente los planes (Free, Familiar, Premium).
 
 // 0. Protección de ruta (¡Debe ser lo primero!)
 require_once __DIR__ . '/includes/auth_protect.php';
@@ -66,7 +66,7 @@ ob_start();
             trendsChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: [], // Se llenará dinámicamente
+                  labels: [], // Se llenará dinámicamente
                     datasets: [{
                         label: 'Usuarios Únicos',
                         data: [], // Se llenará dinámicamente
@@ -102,7 +102,7 @@ ob_start();
             const endDate = document.getElementById('endDate').value;
             const btn = document.getElementById('refreshBtn');
             const icon = btn.querySelector('i');
-            
+
             // Animación de carga visual
             if(icon) icon.classList.add('animate-spin');
             if(btn) btn.classList.add('opacity-80', 'cursor-not-allowed');
@@ -165,6 +165,62 @@ ob_start();
                     document.getElementById('val-nav-wellness').innerText = wellnessCount.toLocaleString();
                 }
 
+                // 4. Extraer Membresías Activas (Nuevo endpoint)
+                const resSubs = await fetch(`ajax_analytics.php?action=subscriptions`);
+                const jsonSubs = await resSubs.json();
+                const subsList = document.getElementById('subscriptionsList');
+                
+                if(jsonSubs.success && jsonSubs.data) {
+                    // CORRECCIÓN DEFINITIVA: Lógica a prueba de balas para extraer el JSON
+                    let dataPlanes = {};
+                    
+                    if (jsonSubs.data.success !== undefined && jsonSubs.data.data !== undefined) {
+                        // Caso 1: Doble envoltura (Proxy envuelve la respuesta de Hermes)
+                        dataPlanes = jsonSubs.data.data;
+                    } else {
+                        // Caso 2: Envoltura simple (Proxy manda la respuesta directa de Hermes)
+                        dataPlanes = jsonSubs.data;
+                    }
+                    
+                    // Configuración visual estricta para Free, Familiar y Premium
+                    const config = {
+                        'Free': { color: 'text-gray-500 dark:text-gray-400', bg: 'bg-gray-100 dark:bg-gray-800', icon: 'ph-leaf', label: 'Plan Básico' },
+                        'Familiar': { color: 'text-purple-500', bg: 'bg-purple-50 dark:bg-purple-900/30', icon: 'ph-users', label: 'Suscripción Grupal' },
+                        'Premium': { color: 'text-calori-600', bg: 'bg-calori-50 dark:bg-calori-900/30', icon: 'ph-crown', label: 'Máximo Potencial' }
+                    };
+
+                    let html = '';
+                    
+                    // Aseguramos iterar sobre las llaves correctas
+                    Object.keys(dataPlanes).forEach(key => {
+                        // SEGURO ANTI-FALLAS: Ignorar si la llave se llama success, data o pagination
+                        if (key === 'success' || key === 'data' || key === 'pagination') return;
+
+                        const style = config[key] || { color: 'text-green-500', bg: 'bg-green-50', icon: 'ph-star', label: 'Plan' };
+                        html += `
+                            <div class="flex items-center justify-between p-4 bg-white/40 dark:bg-darkbase-900/40 border border-white/20 dark:border-gray-800 rounded-2xl transition-all hover:translate-x-1 shadow-sm mb-3">
+                                <div class="flex items-center gap-4">
+                                    <div class="w-12 h-12 rounded-2xl ${style.bg} flex items-center justify-center ${style.color} shadow-inner">
+                                        <i class="ph ${style.icon} text-2xl"></i>
+                                    </div>
+                                    <div>
+                                        <h4 class="font-bold text-gray-900 dark:text-white leading-tight">${key}</h4>
+                                        <p class="text-[10px] font-black uppercase tracking-widest opacity-40">${style.label}</p>
+                                    </div>
+                                </div>
+                                <div class="text-right">
+                                    <span class="text-2xl font-black text-gray-900 dark:text-white">${Number(dataPlanes[key]).toLocaleString()}</span>
+                                </div>
+                            </div>
+                        `;
+                    });
+                    
+                    if(html === '') html = '<p class="text-sm text-gray-500">Sin membresías por mostrar.</p>';
+                    subsList.innerHTML = html;
+                } else {
+                    subsList.innerHTML = '<p class="text-sm text-red-500">Error al cargar datos.</p>';
+                }
+
             } catch (error) {
                 console.error("Error al procesar las analíticas:", error);
             } finally {
@@ -202,6 +258,7 @@ require_once __DIR__ . '/includes/header.php';
                         <span class="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-0.5">Inicio</span>
                         <input type="date" id="startDate" class="bg-transparent border-none text-sm font-semibold focus:ring-0 cursor-pointer dark:text-white" value="2026-05-01">
                     </div>
+                
                     <div class="w-px h-8 bg-gray-200 dark:bg-gray-700"></div>
                     <div class="flex flex-col">
                         <span class="text-[10px] font-bold text-gray-400 uppercase ml-2 mb-0.5">Fin</span>
@@ -316,8 +373,8 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 gap-6">
-                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div class="lg:col-span-2 bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm">
                     <div class="flex justify-between items-center mb-6">
                         <div>
                             <h2 class="text-lg font-bold text-gray-900 dark:text-white">Tendencias de Adopción</h2>
@@ -326,6 +383,26 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div class="h-80 w-full">
                         <canvas id="trendsChart"></canvas>
+                    </div>
+                </div>
+
+                <div class="lg:col-span-1 bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm flex flex-col">
+                    <div class="flex justify-between items-center mb-6">
+                        <div>
+                            <h2 class="text-lg font-bold text-gray-900 dark:text-white">Membresías</h2>
+                            <p class="text-xs text-gray-500 font-medium">Distribución por plan actual</p>
+                        </div>
+                        <div class="p-3 bg-calori-50 dark:bg-calori-900/30 text-calori-600 rounded-xl">
+                            <i class="ph ph-identification-card text-2xl"></i>
+                        </div>
+                    </div>
+                    
+                    <div id="subscriptionsList" class="space-y-4 flex-1 overflow-y-auto pr-2">
+                        <div class="animate-pulse space-y-4">
+                            <div class="h-20 bg-gray-100 dark:bg-gray-800 rounded-2xl"></div>
+                            <div class="h-20 bg-gray-100 dark:bg-gray-800 rounded-2xl"></div>
+                            <div class="h-20 bg-gray-100 dark:bg-gray-800 rounded-2xl"></div>
+                        </div>
                     </div>
                 </div>
             </div>
