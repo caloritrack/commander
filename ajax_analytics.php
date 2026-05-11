@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-09
-// Versión: 1.8
-// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'customers' para consultar el endpoint /admin/dashboard/customers-report conservando todo lo anterior. Se añadió soporte para el parámetro 'page' en la ruta customers.
+// Fecha: 2026-05-10
+// Versión: 1.11
+// Descripción: Controlador AJAX proxy seguro. Se mantienen TODAS las rutas originales (kpis, trends, distribution, schema) y se integran 'meal_plans', 'demographics', 'subscriptions' y 'customers' intactos, preservando la integridad de logs y manejo de tokens.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -43,7 +43,7 @@ $token = $_SESSION['user_token'];
 $action = $_GET['action'] ?? '';
 $startDate = $_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'));
 $endDate = $_GET['endDate'] ?? date('Y-m-d');
-$page = $_GET['page'] ?? 1; // NUEVO: Capturamos la página
+$page = $_GET['page'] ?? 1;
 
 $apiUrl = 'https://api.caloritrack.com';
 $endpoint = '';
@@ -59,14 +59,20 @@ if ($action === 'kpis') {
     $groupBy = $_GET['groupBy'] ?? 'screen_name';
     $endpoint = "/admin/analytics/events/distribution?startDate={$startDate}&endDate={$endDate}&groupBy={$groupBy}";
 } elseif ($action === 'schema') {
-    // Nuevo endpoint de auto-descubrimiento
+    // Endpoint original de auto-descubrimiento
     $endpoint = "/admin/analytics/schema";
 } elseif ($action === 'subscriptions') {
     // Endpoint para el resumen de membresías activas
     $endpoint = "/admin/dashboard/subscriptions-summary";
 } elseif ($action === 'customers') {
-    // NUEVO: Endpoint para el reporte detallado de clientes con soporte para paginación
+    // Endpoint para el reporte detallado de clientes
     $endpoint = "/admin/dashboard/customers-report?page={$page}";
+} elseif ($action === 'meal_plans') {
+    // Endpoint para estadísticas de planes alimenticios
+    $endpoint = "/admin/dashboard/meal-plans-stats";
+} elseif ($action === 'demographics') {
+    // Endpoint para datos demográficos cruzados
+    $endpoint = "/admin/dashboard/demographics-stats";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");
     echo json_encode(['success' => false, 'message' => 'Acción inválida solicitada al proxy']);
@@ -74,7 +80,6 @@ if ($action === 'kpis') {
 }
 
 $fullUrl = $apiUrl . $endpoint;
-
 debugLog("--- INICIANDO PETICIÓN A HERMES ---");
 debugLog("URL Destino: " . $fullUrl);
 
@@ -100,8 +105,6 @@ debugLog("Código HTTP recibido: " . $httpCode);
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
     debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
-    
-    // Si falla, enviamos el error al frontend para depuración
     echo json_encode([
         'success' => false, 
         'message' => 'Error al conectar con los servidores de Hermes.',
@@ -110,11 +113,9 @@ if ($error || $httpCode !== 200) {
     exit();
 }
 
-// Guardamos un extracto de la respuesta para no saturar el log si es inmensa
 debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "...");
 debugLog("--- FIN DE LA PETICIÓN ---");
 
-// Decodificamos la respuesta de Hermes y la empaquetamos
 $responseData = json_decode($response, true);
 echo json_encode(['success' => true, 'data' => $responseData]);
 ?>
