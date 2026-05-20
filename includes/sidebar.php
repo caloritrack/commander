@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-16
-// Versión: 1.6
-// Descripción: Panel lateral. Se reemplazó el enlace directo del Dashboard Global por un menú agrupador (Dashboards) que contiene el Dashboard Global y el nuevo Dashboard de Growth & Retención, manteniendo el orden y la escalabilidad del menú.
+// Fecha: 2026-05-20
+// Versión: 1.7
+// Descripción: Panel lateral. Se actualizó la sección inferior de "Configuración" transformándola en un menú colapsable e integrando el nuevo acceso directo a la "Bóveda Legal" (Gestión de Documentos Legales).
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -16,16 +16,14 @@
 
         <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
             
-            <!-- NUEVO AGRUPADOR DE DASHBOARDS -->
             <div>
                 <button onclick="toggleSubmenu('submenu-dashboards', 'icon-dashboards')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-calori-50 dark:hover:bg-calori-900/20 rounded-xl font-medium transition-colors focus:outline-none">
                     <div class="flex items-center">
                         <i class="ph ph-squares-four text-xl mr-3"></i>
-                        <span class="nav-label">Dashboards</span>
+                        <span class="nav-label">Dashboards Joshua</span>
                     </div>
                     <i id="icon-dashboards" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label rotate-180"></i>
                 </button>
-                <!-- Agregamos la clase 'open' para que inicie desplegado por UX -->
                 <div id="submenu-dashboards" class="submenu open pl-11 pr-3">
                     <a href="dashboard.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Global (General)</a>
                     <a href="dashboard_growth.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Retención y Growth</a>
@@ -73,7 +71,7 @@
                     </div>
                     <i id="icon-eng" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
-                <div id="submenu-eng" class="submenu open pl-11 pr-3">
+                <div id="submenu-eng" class="submenu pl-11 pr-3">
                     <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Heimdall</a>
                     <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Hermes</a>
                 </div>
@@ -81,9 +79,17 @@
         </nav>
 
         <div class="p-4 border-t border-gray-100/50 dark:border-gray-800">
-            <a href="#" class="nav-item flex items-center px-3 py-2.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors">
-                <i class="ph ph-gear text-xl mr-3"></i>
-                <span class="nav-label">Configuración</span>
-            </a>
+            <div>
+                <button onclick="toggleSubmenu('submenu-settings', 'icon-settings')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-500 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-gear text-xl mr-3"></i>
+                        <span class="nav-label">Configuración</span>
+                    </div>
+                    <i id="icon-settings" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
+                </button>
+                <div id="submenu-settings" class="submenu pl-11 pr-3 mt-1">
+                    <a href="legal_documents.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bóveda Legal</a>
+                </div>
+            </div>
         </div>
     </aside>
