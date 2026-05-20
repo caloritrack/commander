@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-10
-// Versión: 1.11
-// Descripción: Controlador AJAX proxy seguro. Se mantienen TODAS las rutas originales (kpis, trends, distribution, schema) y se integran 'meal_plans', 'demographics', 'subscriptions' y 'customers' intactos, preservando la integridad de logs y manejo de tokens.
+// Fecha: 2026-05-16
+// Versión: 1.13
+// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'top_events' para consumir el nuevo endpoint de Hermes /admin/analytics/events/top.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -55,24 +55,32 @@ if ($action === 'kpis') {
     $metric = $_GET['metric'] ?? 'unique_users';
     $interval = $_GET['interval'] ?? 'day';
     $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric={$metric}";
+} elseif ($action === 'trends_events') {
+    $eventName = $_GET['eventName'] ?? '';
+    $interval = $_GET['interval'] ?? 'day';
+    $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric=events&eventName={$eventName}";
 } elseif ($action === 'distribution') {
     $groupBy = $_GET['groupBy'] ?? 'screen_name';
     $endpoint = "/admin/analytics/events/distribution?startDate={$startDate}&endDate={$endDate}&groupBy={$groupBy}";
+} elseif ($action === 'metadata_distribution') {
+    $eventName = $_GET['eventName'] ?? '';
+    $metadataKey = $_GET['metadataKey'] ?? '';
+    $endpoint = "/admin/analytics/events/metadata?eventName={$eventName}&metadataKey={$metadataKey}&startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'schema') {
-    // Endpoint original de auto-descubrimiento
     $endpoint = "/admin/analytics/schema";
 } elseif ($action === 'subscriptions') {
-    // Endpoint para el resumen de membresías activas
     $endpoint = "/admin/dashboard/subscriptions-summary";
 } elseif ($action === 'customers') {
-    // Endpoint para el reporte detallado de clientes
     $endpoint = "/admin/dashboard/customers-report?page={$page}";
 } elseif ($action === 'meal_plans') {
-    // Endpoint para estadísticas de planes alimenticios
     $endpoint = "/admin/dashboard/meal-plans-stats";
 } elseif ($action === 'demographics') {
-    // Endpoint para datos demográficos cruzados
     $endpoint = "/admin/dashboard/demographics-stats";
+} elseif ($action === 'dayparting') {
+    $endpoint = "/admin/dashboard/dayparting-stats?startDate={$startDate}&endDate={$endDate}";
+} elseif ($action === 'top_events') {
+    // NUEVO: Endpoint directo de Hermes para Top 10 Eventos
+    $endpoint = "/admin/analytics/events/top?startDate={$startDate}&endDate={$endDate}";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");
     echo json_encode(['success' => false, 'message' => 'Acción inválida solicitada al proxy']);

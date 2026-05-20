@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-09
-// Versión: 1.5
-// Descripción: Panel lateral. Se agregó el menú principal "Analíticas" y su submenú "Schema" para consultar la estructura de datos dinámicos, y ahora el "Reporte de Clientes".
+// Fecha: 2026-05-16
+// Versión: 1.6
+// Descripción: Panel lateral. Se reemplazó el enlace directo del Dashboard Global por un menú agrupador (Dashboards) que contiene el Dashboard Global y el nuevo Dashboard de Growth & Retención, manteniendo el orden y la escalabilidad del menú.
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -15,10 +15,22 @@
         </div>
 
         <nav class="flex-1 overflow-y-auto py-4 px-3 space-y-1">
-            <a href="dashboard.php" class="nav-item flex items-center px-3 py-2.5 bg-calori-50 dark:bg-calori-900/20 text-calori-700 dark:text-calori-400 rounded-xl font-medium transition-colors">
-                <i class="ph ph-squares-four text-xl mr-3"></i>
-                <span class="nav-label">Dashboard Global</span>
-            </a>
+            
+            <!-- NUEVO AGRUPADOR DE DASHBOARDS -->
+            <div>
+                <button onclick="toggleSubmenu('submenu-dashboards', 'icon-dashboards')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-calori-50 dark:hover:bg-calori-900/20 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-squares-four text-xl mr-3"></i>
+                        <span class="nav-label">Dashboards</span>
+                    </div>
+                    <i id="icon-dashboards" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label rotate-180"></i>
+                </button>
+                <!-- Agregamos la clase 'open' para que inicie desplegado por UX -->
+                <div id="submenu-dashboards" class="submenu open pl-11 pr-3">
+                    <a href="dashboard.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Global (General)</a>
+                    <a href="dashboard_growth.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Retención y Growth</a>
+                </div>
+            </div>
 
             <div>
                 <button onclick="toggleSubmenu('submenu-analytics', 'icon-analytics')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
