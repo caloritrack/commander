@@ -2,8 +2,8 @@
 // Nombre del archivo: legal_documents.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-20
-// Versión: 1.2
-// Descripción: Interfaz gráfica de la Bóveda Legal. Integrada con generación de hash por backend (PHP cURL) para evadir restricciones de subdominios.
+// Versión: 1.9
+// Descripción: Interfaz gráfica de la Bóveda Legal. Se corrigió la función de activación (processActivate) para capturar el UUID dinámico de Hermes y procesar correctamente el mensaje de éxito de la API.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -68,46 +68,49 @@ ob_start();
 
         // --- AUTOGENERADOR DE HASH SHA-256 VÍA PHP ---
         function initHashGenerator() {
-            const pdfInput = document.getElementById('doc_pdf');
-            if (!pdfInput) return;
+            const pdfInputEs = document.getElementById('doc_pdf_es');
+            const pdfInputEn = document.getElementById('doc_pdf_en');
 
-            pdfInput.addEventListener('blur', async function() {
-                const url = this.value.trim();
-                const hashInput = document.getElementById('doc_hash');
-                
-                // KRILLIN FIX: Ya no exigimos que termine en .pdf, solo que no esté vacía
-                if (!url) return;
-                
-                hashInput.value = "Calculando por PHP...";
-                hashInput.disabled = true;
+            const attachHashListener = (inputEl, hashElId) => {
+                if (!inputEl) return;
+                inputEl.addEventListener('blur', async function() {
+                    const url = this.value.trim();
+                    const hashInput = document.getElementById(hashElId);
+                    
+                    if (!url) return;
+                    
+                    hashInput.value = "Calculando por PHP...";
+                    hashInput.disabled = true;
 
-                try {
-                    // Llamamos a nuestra propia herramienta en ajax_legal.php
-                    const res = await fetch('ajax_legal.php?action=generate_hash', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ url: url })
-                    });
-                    
-                    const json = await res.json();
-                    
-                    if (json.success) {
-                        hashInput.value = json.hash;
-                        showToast("Hash SHA-256 calculado exitosamente por el servidor.", "success");
-                    } else {
+                    try {
+                        const res = await fetch('ajax_legal.php?action=generate_hash', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ url: url })
+                        });
+                        
+                        const json = await res.json();
+                        
+                        if (json.success) {
+                            hashInput.value = json.hash;
+                            showToast("Hash SHA-256 calculado exitosamente.", "success");
+                        } else {
+                            hashInput.value = "";
+                            showToast("Error del servidor: " + json.message, "error");
+                        }
+                        
+                    } catch (error) {
+                        console.error("Error en petición local:", error);
                         hashInput.value = "";
-                        showToast("Error del servidor: " + json.message, "error");
+                        showToast("No se pudo conectar con el calculador de hash interno.", "error");
+                    } finally {
+                        hashInput.disabled = false;
                     }
-                    
-                } catch (error) {
-                    console.error("Error en petición local:", error);
-                    hashInput.value = "";
-                    showToast("No se pudo conectar con el calculador de hash interno.", "error");
-                } finally {
-                    // Mantenemos el campo readonly para que el usuario no modifique el hash legítimo a menos que quiera
-                    hashInput.disabled = false;
-                }
-            });
+                });
+            };
+
+            attachHashListener(pdfInputEs, 'doc_hash_es');
+            attachHashListener(pdfInputEn, 'doc_hash_en');
         }
 
         // --- LISTAR DOCUMENTOS ---
@@ -135,12 +138,13 @@ ob_start();
                             ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded border border-green-200"><i class="ph ph-check-circle mr-1"></i>Activo</span>'
                             : '<span class="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold rounded border border-gray-200 dark:border-gray-700">Borrador</span>';
 
+                        // KRILLIN: Pasamos el 'doc.id' (que es el UUID que manda Hermes) para las acciones de activar y eliminar
                         const actionActivate = !isActive 
-                            ? `<button onclick="confirmActivate(${doc.id}, '${doc.document_type}')" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Publicar/Activar"><i class="ph ph-rocket-launch text-lg"></i></button>`
+                            ? `<button onclick="confirmActivate('${doc.id}', '${doc.document_type}')" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Publicar/Activar"><i class="ph ph-rocket-launch text-lg"></i></button>`
                             : '';
                             
                         const actionDelete = !isActive
-                            ? `<button onclick="confirmDelete(${doc.id})" class="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar Borrador"><i class="ph ph-trash text-lg"></i></button>`
+                            ? `<button onclick="confirmDelete('${doc.id}')" class="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar Borrador"><i class="ph ph-trash text-lg"></i></button>`
                             : '';
 
                         html += `
@@ -172,11 +176,17 @@ ob_start();
         async function handleCreate(e) {
             e.preventDefault();
             const btn = document.getElementById('btnSubmitCreate');
-            const hashVal = document.getElementById('doc_hash').value.trim();
+            
+            const hashValEs = document.getElementById('doc_hash_es').value.trim();
+            const mdUrlEs = document.getElementById('doc_markdown_url_es').value.trim();
+            const pdfUrlEs = document.getElementById('doc_pdf_es').value.trim();
 
-            // KRILLIN FIX: Blindaje para no enviar JSON incompleto a Hermes
-            if (!hashVal || hashVal.length !== 64) {
-                showToast("El Hash SHA-256 no es válido. Haz clic en la URL del PDF para calcularlo automáticamente.", "error");
+            const hashValEn = document.getElementById('doc_hash_en').value.trim();
+            const mdUrlEn = document.getElementById('doc_markdown_url_en').value.trim();
+            const pdfUrlEn = document.getElementById('doc_pdf_en').value.trim();
+
+            if (!hashValEs || hashValEs.length !== 64 || !hashValEn || hashValEn.length !== 64) {
+                showToast("Los Hashes SHA-256 no son válidos. Haz clic en las URLs de PDF para calcularlos automáticamente.", "error");
                 return;
             }
 
@@ -186,17 +196,26 @@ ob_start();
             const payload = {
                 document_type: document.getElementById('doc_type').value,
                 version_string: document.getElementById('doc_version').value,
-                translations: [{
-                    language_code: "es-MX",
-                    document_content: document.getElementById('doc_content').value,
-                    pdf_url: document.getElementById('doc_pdf').value,
-                    document_hash: hashVal
-                }]
+                translations: [
+                    {
+                        language_code: "es-MX",
+                        document_content: mdUrlEs,
+                        pdf_url: pdfUrlEs,
+                        document_hash: hashValEs
+                    },
+                    {
+                        language_code: "en-US",
+                        document_content: mdUrlEn,
+                        pdf_url: pdfUrlEn,
+                        document_hash: hashValEn
+                    }
+                ]
             };
 
             try {
                 const res = await fetch('ajax_legal.php?action=create', {
                     method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
                 const json = await res.json();
@@ -234,17 +253,23 @@ ob_start();
             btn.disabled = true;
 
             try {
+                // KRILLIN: Pasamos de forma transparente el UUID dinámico hacia el controlador proxy
                 const res = await fetch(`ajax_legal.php?action=activate&id=${documentToActivate.id}`, {
                     method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ document_type: documentToActivate.type })
                 });
                 const json = await res.json();
 
-                if (json.http_code === 200 || json.success) {
-                    showToast("Documento activado exitosamente. La versión anterior ha sido archivada.", "success");
+                // KRILLIN FIX: Ahora lee el mensaje de éxito correcto que manda la API de Hermes
+                if (json.success || json.http_code === 200) {
+                    let apiMessage = "Documento activado exitosamente.";
+                    if (json.data && json.data.message) apiMessage = json.data.message;
+                    
+                    showToast(apiMessage, "success");
                     loadDocuments();
                 } else if(json.http_code === 404) {
-                    showToast("El documento no existe o ya fue eliminado.", "error");
+                    showToast("El documento no existe o la URL es incorrecta.", "error");
                 } else {
                     showToast("Error al activar el documento.", "error");
                 }
@@ -276,7 +301,7 @@ ob_start();
                 const res = await fetch(`ajax_legal.php?action=delete&id=${documentToDelete}`, { method: 'DELETE' });
                 const json = await res.json();
 
-                if (json.http_code === 204) {
+                if (json.http_code === 204 || json.success) {
                     showToast("Documento eliminado correctamente.", "success");
                     loadDocuments();
                     cancelDelete();
@@ -358,17 +383,18 @@ require_once __DIR__ . '/includes/header.php';
 
     <div id="modalCreate" class="hidden fixed inset-0 z-[100] flex items-center justify-center p-4">
         <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" onclick="closeCreateModal()"></div>
-        <div class="bg-white dark:bg-darkbase-900 border border-gray-200 dark:border-gray-700 w-full max-w-2xl rounded-3xl p-8 shadow-2xl relative">
+        <div class="bg-white dark:bg-darkbase-900 border border-gray-200 dark:border-gray-700 w-full max-w-2xl max-h-[90vh] overflow-y-auto rounded-3xl p-8 shadow-2xl relative">
             <div class="flex justify-between items-center mb-6">
                 <h3 class="text-xl font-bold text-gray-900 dark:text-white">Redactar Nuevo Documento</h3>
                 <button onclick="closeCreateModal()" class="text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"><i class="ph ph-x text-xl"></i></button>
             </div>
             
             <form id="formCreate" onsubmit="handleCreate(event)" class="space-y-4">
-                <div class="grid grid-cols-2 gap-4">
+                
+                <div class="grid grid-cols-2 gap-4 bg-gray-50/50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo</label>
-                        <select id="doc_type" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                        <select id="doc_type" required class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
                             <option value="TERMS_AND_CONDITIONS">Términos y Condiciones</option>
                             <option value="PRIVACY_POLICY">Aviso de Privacidad</option>
                             <option value="MEDICAL_DISCLAIMER">Descargo Médico</option>
@@ -376,23 +402,49 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Versión (Ej. v2.0_2026)</label>
-                        <input type="text" id="doc_version" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                        <input type="text" id="doc_version" required class="w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
                     </div>
                 </div>
                 
-                <div>
-                    <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Contenido (HTML / Markdown)</label>
-                    <textarea id="doc_content" required rows="5" class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none font-mono"></textarea>
+                <div class="mt-4">
+                    <h4 class="text-md font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1 mb-3">Versión en Español (es-MX)</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">URL del archivo Markdown (.md)</label>
+                            <input type="url" id="doc_markdown_url_es" placeholder="https://caloritrack.com/docs/terminos_es.md" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">URL PDF Oficial</label>
+                                <input type="url" id="doc_pdf_es" placeholder="https://caloritrack.com/docs/terminos_es.pdf" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Hash SHA-256 (Del PDF)</label>
+                                <input type="text" id="doc_hash_es" readonly placeholder="Calculando al perder el foco..." class="w-full bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2 text-sm text-gray-600 dark:text-gray-300 outline-none font-mono cursor-not-allowed">
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">URL PDF (Mismo dominio principal)</label>
-                        <input type="url" id="doc_pdf" placeholder="https://caloritrack.com/..." required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
-                    </div>
-                    <div>
-                        <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Hash SHA-256 (Automático)</label>
-                        <input type="text" id="doc_hash" readonly placeholder="Calculando al perder el foco de la URL..." class="w-full bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2 text-sm text-gray-600 dark:text-gray-300 outline-none font-mono cursor-not-allowed">
+                <div class="mt-6">
+                    <h4 class="text-md font-bold text-gray-900 dark:text-white border-b border-gray-200 dark:border-gray-700 pb-1 mb-3">Versión en Inglés (en-US)</h4>
+                    <div class="space-y-3">
+                        <div>
+                            <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">URL del archivo Markdown (.md)</label>
+                            <input type="url" id="doc_markdown_url_en" placeholder="https://caloritrack.com/docs/terminos_en.md" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                        </div>
+
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">URL PDF Oficial</label>
+                                <input type="url" id="doc_pdf_en" placeholder="https://caloritrack.com/docs/terminos_en.pdf" required class="w-full bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl px-4 py-2 text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-calori-500 outline-none">
+                            </div>
+                            <div>
+                                <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Hash SHA-256 (Del PDF)</label>
+                                <input type="text" id="doc_hash_en" readonly placeholder="Calculando al perder el foco..." class="w-full bg-gray-200 dark:bg-gray-700 border border-gray-300 dark:border-gray-600 rounded-xl px-4 py-2 text-sm text-gray-600 dark:text-gray-300 outline-none font-mono cursor-not-allowed">
+                            </div>
+                        </div>
                     </div>
                 </div>
 

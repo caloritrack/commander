@@ -1,7 +1,9 @@
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Versión: 2.0 (Túnel Base64 Anti-Firewall y Proxy DELETE)
+// Fecha: 2026-05-20
+// Versión: 2.4
+// Descripción: Controlador Proxy para Bóveda Legal. Corregida la ruta de activación (PUT) para asegurar que el UUID viaje correctamente hacia la API de Hermes.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -24,7 +26,7 @@ if (!isset($_SESSION['user_token'])) {
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
-$docId = $_GET['id'] ?? '';
+$docId = $_GET['id'] ?? ''; // KRILLIN: Ahora este parámetro recibe el UUID del documento para la API
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
 // --------------------------------------------------------------------------------------
@@ -52,7 +54,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
 }
 
 // --------------------------------------------------------------------------------------
-// COMUNICACIÓN CON HERMES
+// COMUNICACIÓN CON HERMES (API)
 // --------------------------------------------------------------------------------------
 $ch = curl_init();
 $headers = [
@@ -66,33 +68,27 @@ if ($action === 'list' && $method === 'GET') {
 } 
 elseif ($action === 'create' && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
-    $payloadData = json_decode($rawInput, true);
-
-    // MAGIA: Desencriptamos el Base64 que viene del frontend para burlar a ModSecurity
-    if (isset($payloadData['_is_base64']) && $payloadData['_is_base64'] === true) {
-        $payloadData['translations'][0]['document_content'] = base64_decode($payloadData['translations'][0]['document_content']);
-        unset($payloadData['_is_base64']); // Quitamos la bandera antes de mandarlo a Hermes
-    }
-
-    $safeInput = json_encode($payloadData, JSON_UNESCAPED_UNICODE);
-    $headers[] = 'Content-Length: ' . strlen($safeInput);
+    $headers[] = 'Content-Length: ' . strlen($rawInput);
 
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $safeInput);
-    debugLog("Enviando paquete blindado a Hermes. Tamaño: " . strlen($safeInput) . " bytes.");
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
+    debugLog("Enviando petición de creación a Hermes con URLs limpias.");
 } 
 elseif ($action === 'activate' && $method === 'PUT') {
     $input = file_get_contents('php://input');
+    $headers[] = 'Content-Length: ' . strlen($input);
+    
+    // KRILLIN FIX: Ahora concatena de forma limpia el UUID enviado por el cliente
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $docId . '/activate');
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
     curl_setopt($ch, CURLOPT_POSTFIELDS, $input);
+    debugLog("Enviando PUT de activación a Hermes para UUID: $docId");
 } 
-// FIX: Aceptamos POST desde el navegador para evadir el bloqueo de DELETE en CyberPanel
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $docId);
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE"); // PHP hace el trabajo sucio hacia Hermes
-    debugLog("Enviando DELETE a Hermes para ID: $docId");
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE"); 
+    debugLog("Enviando DELETE a Hermes para UUID: $docId");
 } 
 else {
     echo json_encode(['success' => false, 'message' => 'Acción no soportada.']);
