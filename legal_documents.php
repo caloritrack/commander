@@ -2,8 +2,8 @@
 // Nombre del archivo: legal_documents.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-20
-// Versión: 1.9
-// Descripción: Interfaz gráfica de la Bóveda Legal. Se corrigió la función de activación (processActivate) para capturar el UUID dinámico de Hermes y procesar correctamente el mensaje de éxito de la API.
+// Versión: 2.4
+// Descripción: Interfaz gráfica de la Bóveda Legal. Se corrigió un bug visual crítico en el renderizado de la tabla eliminando la clase flex directa de los elementos <td> para evitar la superposición de columnas, envolviendo los botones en un <div> interno.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -40,7 +40,6 @@ ob_start();
             const toastText = document.getElementById('toastText');
             
             toast.classList.remove('translate-y-full', 'opacity-0', 'bg-green-500', 'bg-red-500');
-            
             if(type === 'success') {
                 toast.classList.add('bg-green-500');
                 toastIcon.className = 'ph ph-check-circle text-white text-xl mr-2';
@@ -116,7 +115,7 @@ ob_start();
         // --- LISTAR DOCUMENTOS ---
         async function loadDocuments() {
             const tbody = document.getElementById('docsTableBody');
-            tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8"><i class="ph ph-spinner animate-spin text-2xl text-calori-500"></i></td></tr>';
+            tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8"><i class="ph ph-spinner animate-spin text-2xl text-calori-500"></i></td></tr>';
             
             try {
                 const res = await fetch('ajax_legal.php?action=list');
@@ -127,45 +126,109 @@ ob_start();
                     let html = '';
                     
                     if(docs.length === 0) {
-                        tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-gray-500">No hay documentos en la bóveda.</td></tr>';
+                        tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-gray-500">No hay documentos en la bóveda.</td></tr>';
                         return;
                     }
 
                     docs.forEach(doc => {
                         const typeName = doc.document_type.replace(/_/g, ' ');
                         const isActive = doc.is_active == 1;
+                        
                         const statusBadge = isActive 
                             ? '<span class="px-2 py-1 bg-green-100 text-green-700 text-xs font-bold rounded border border-green-200"><i class="ph ph-check-circle mr-1"></i>Activo</span>'
                             : '<span class="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 text-xs font-bold rounded border border-gray-200 dark:border-gray-700">Borrador</span>';
 
-                        // KRILLIN: Pasamos el 'doc.id' (que es el UUID que manda Hermes) para las acciones de activar y eliminar
+                        // KRILLIN FIX: El Cazador de UUIDs definitivo.
+                        let itemUuid = doc.id || doc.uuid || doc.document_id || doc.legal_document_id || '';
+                        
+                        if (!itemUuid) {
+                            const uuidRegex = /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+                            const possibleUuids = Object.values(doc).filter(v => typeof v === 'string' && uuidRegex.test(v));
+                            if (possibleUuids.length > 0) itemUuid = possibleUuids[0];
+                        }
+                        if(!itemUuid) itemUuid = 'ERROR_NO_UUID';
+                        
                         const actionActivate = !isActive 
-                            ? `<button onclick="confirmActivate('${doc.id}', '${doc.document_type}')" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Publicar/Activar"><i class="ph ph-rocket-launch text-lg"></i></button>`
+                            ? `<button onclick="confirmActivate('${itemUuid}', '${doc.document_type}')" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Publicar/Activar"><i class="ph ph-rocket-launch text-lg"></i></button>`
                             : '';
                             
                         const actionDelete = !isActive
-                            ? `<button onclick="confirmDelete('${doc.id}')" class="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar Borrador"><i class="ph ph-trash text-lg"></i></button>`
+                            ? `<button onclick="confirmDelete('${itemUuid}')" class="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar Borrador"><i class="ph ph-trash text-lg"></i></button>`
                             : '';
 
+                        // Fechas Dinámicas
+                        const pubDate = doc.published_at ? new Date(doc.published_at).toLocaleDateString() : '-';
+                        const expDate = doc.expired_at ? new Date(doc.expired_at).toLocaleDateString() : '-';
+
+                        // PDFs Links Dinámicos
+                        let pdfLinks = '';
+                        if (doc.translations && Array.isArray(doc.translations)) {
+                            doc.translations.forEach(t => {
+                                if (t.pdf_url) {
+                                    let langLabel = t.language_code ? t.language_code.split('-')[0].toUpperCase() : 'PDF';
+                                    pdfLinks += `
+                                        <a href="${t.pdf_url}" target="_blank" class="inline-flex items-center justify-center px-2 py-1 bg-red-50 dark:bg-red-900/20 text-red-500 dark:text-red-400 hover:bg-red-100 dark:hover:bg-red-900/40 rounded-lg transition-colors border border-red-100 dark:border-red-800" title="Ver PDF (${t.language_code})">
+                                            <i class="ph ph-file-pdf text-lg mr-1"></i>
+                                            <span class="text-[10px] font-bold">${langLabel}</span>
+                                        </a>`;
+                                }
+                            });
+                        }
+                        if (!pdfLinks) pdfLinks = '<span class="text-xs text-gray-400">Sin adjuntos</span>';
+
+                        // MD Links Dinámicos (Nueva Columna)
+                        let mdLinks = '';
+                        if (doc.translations && Array.isArray(doc.translations)) {
+                            doc.translations.forEach(t => {
+                                if (t.document_content) {
+                                    let langLabel = t.language_code ? t.language_code.split('-')[0].toUpperCase() : 'MD';
+                                    mdLinks += `
+                                        <a href="${t.document_content}" target="_blank" class="inline-flex items-center justify-center px-2 py-1 bg-blue-50 dark:bg-blue-900/20 text-blue-500 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/40 rounded-lg transition-colors border border-blue-100 dark:border-blue-800" title="Ver archivo MD (${t.language_code})">
+                                            <i class="ph ph-file-text text-lg mr-1"></i>
+                                            <span class="text-[10px] font-bold">${langLabel}</span>
+                                        </a>`;
+                                }
+                            });
+                        }
+                        if (!mdLinks) mdLinks = '<span class="text-xs text-gray-400">Sin contenido</span>';
+                            
+                        // KRILLIN FIX: Se eliminó flex directo de los TD y se usó un DIV interno para evitar que se desborden o mezclen las columnas
                         html += `
                             <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 transition-colors">
                                 <td class="py-4 px-4 whitespace-nowrap text-sm font-bold text-gray-900 dark:text-white">${typeName}</td>
                                 <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-600 dark:text-gray-400 font-mono">${doc.version_string}</td>
                                 <td class="py-4 px-4 whitespace-nowrap">${statusBadge}</td>
-                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${doc.created_at ? new Date(doc.created_at).toLocaleDateString() : '-'}</td>
-                                <td class="py-4 px-4 whitespace-nowrap flex gap-2">
-                                    ${actionActivate}
-                                    ${actionDelete}
+                                <td class="py-4 px-4 whitespace-nowrap">
+                                    <div class="flex flex-col gap-1">
+                                        <span class="text-xs text-gray-500 dark:text-gray-400"><strong class="text-gray-700 dark:text-gray-300">Pub:</strong> ${pubDate}</span>
+                                        <span class="text-xs text-gray-500 dark:text-gray-400"><strong class="text-gray-700 dark:text-gray-300">Exp:</strong> ${expDate}</span>
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4 whitespace-nowrap">
+                                    <div class="flex items-center gap-1">
+                                        ${pdfLinks}
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4 whitespace-nowrap">
+                                    <div class="flex items-center gap-1">
+                                        ${mdLinks}
+                                    </div>
+                                </td>
+                                <td class="py-4 px-4 whitespace-nowrap">
+                                    <div class="flex items-center gap-2">
+                                        ${actionActivate}
+                                        ${actionDelete}
+                                    </div>
                                 </td>
                             </tr>
                         `;
                     });
                     tbody.innerHTML = html;
                 } else {
-                    tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-red-500">No se pudieron cargar los documentos.</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-red-500">No se pudieron cargar los documentos.</td></tr>';
                 }
             } catch (error) {
-                tbody.innerHTML = '<tr><td colspan="5" class="text-center py-8 text-red-500">Error de conexión con Hermes.</td></tr>';
+                tbody.innerHTML = '<tr><td colspan="7" class="text-center py-8 text-red-500">Error de conexión con Hermes.</td></tr>';
             }
         }
 
@@ -211,7 +274,7 @@ ob_start();
                     }
                 ]
             };
-
+            
             try {
                 const res = await fetch('ajax_legal.php?action=create', {
                     method: 'POST',
@@ -251,9 +314,8 @@ ob_start();
             const btn = document.getElementById('btnConfirmActivate');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Activando...';
             btn.disabled = true;
-
+            
             try {
-                // KRILLIN: Pasamos de forma transparente el UUID dinámico hacia el controlador proxy
                 const res = await fetch(`ajax_legal.php?action=activate&id=${documentToActivate.id}`, {
                     method: 'PUT',
                     headers: { 'Content-Type': 'application/json' },
@@ -261,15 +323,18 @@ ob_start();
                 });
                 const json = await res.json();
 
-                // KRILLIN FIX: Ahora lee el mensaje de éxito correcto que manda la API de Hermes
                 if (json.success || json.http_code === 200) {
                     let apiMessage = "Documento activado exitosamente.";
                     if (json.data && json.data.message) apiMessage = json.data.message;
                     
                     showToast(apiMessage, "success");
                     loadDocuments();
+                } else if(json.http_code === 400 && !json.data) {
+                    showToast(json.message, "error");
                 } else if(json.http_code === 404) {
-                    showToast("El documento no existe o la URL es incorrecta.", "error");
+                    let apiError = "El documento no existe o la URL es incorrecta.";
+                    if (json.data && json.data.error) apiError = json.data.error;
+                    showToast(apiError, "error");
                 } else {
                     showToast("Error al activar el documento.", "error");
                 }
@@ -296,7 +361,7 @@ ob_start();
             const btn = document.getElementById('btnConfirmDelete');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Borrando...';
             btn.disabled = true;
-
+            
             try {
                 const res = await fetch(`ajax_legal.php?action=delete&id=${documentToDelete}`, { method: 'DELETE' });
                 const json = await res.json();
@@ -308,9 +373,6 @@ ob_start();
                 } else if (json.http_code === 409) {
                     cancelDelete();
                     document.getElementById('modalError409').classList.remove('hidden');
-                } else if (json.http_code === 400) {
-                    showToast("Petición malformada, falta el ID.", "error");
-                    cancelDelete();
                 } else {
                     showToast("No se pudo eliminar el documento.", "error");
                     cancelDelete();
@@ -369,12 +431,14 @@ require_once __DIR__ . '/includes/header.php';
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Tipo de Documento</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Versión</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Estado</th>
-                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fecha Creación</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Fechas</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">PDFs</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Markdowns</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Acciones</th>
                             </tr>
                         </thead>
                         <tbody id="docsTableBody" class="divide-y divide-gray-100 dark:divide-gray-800">
-                            </tbody>
+                        </tbody>
                     </table>
                 </div>
             </div>
@@ -390,7 +454,6 @@ require_once __DIR__ . '/includes/header.php';
             </div>
             
             <form id="formCreate" onsubmit="handleCreate(event)" class="space-y-4">
-                
                 <div class="grid grid-cols-2 gap-4 bg-gray-50/50 dark:bg-gray-800/30 p-4 rounded-xl border border-gray-100 dark:border-gray-800">
                     <div>
                         <label class="block text-sm font-semibold text-gray-700 dark:text-gray-300 mb-1">Tipo</label>

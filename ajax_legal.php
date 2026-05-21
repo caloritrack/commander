@@ -2,8 +2,8 @@
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-20
-// Versión: 2.4
-// Descripción: Controlador Proxy para Bóveda Legal. Corregida la ruta de activación (PUT) para asegurar que el UUID viaje correctamente hacia la API de Hermes.
+// Versión: 2.6
+// Descripción: Controlador Proxy para Bóveda Legal. Se agregó un bloqueador estricto para evitar peticiones a Hermes si el ID recibido no es válido o viene como "undefined". 
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -26,7 +26,21 @@ if (!isset($_SESSION['user_token'])) {
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
-$docId = $_GET['id'] ?? ''; // KRILLIN: Ahora este parámetro recibe el UUID del documento para la API
+$docId = trim($_GET['id'] ?? '');
+
+// KRILLIN FIX: Bloqueador de seguridad. Si el Front-End no manda un UUID real, cortamos la comunicación
+// para no bombardear a Hermes con peticiones que darán error 404 de todos modos.
+if ($action === 'activate' || $action === 'delete') {
+    if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''])) {
+        echo json_encode([
+            'success' => false, 
+            'http_code' => 400, 
+            'message' => 'Error Interno: El botón envió un ID vacío o "undefined". El Cazador de UUIDs no pudo encontrar la llave correcta.'
+        ]);
+        exit();
+    }
+}
+
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
 // --------------------------------------------------------------------------------------
@@ -44,7 +58,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     $pdfContent = curl_exec($chPdf);
     $httpCodePdf = curl_getinfo($chPdf, CURLINFO_HTTP_CODE);
     curl_close($chPdf);
-
+    
     if ($pdfContent && $httpCodePdf === 200) {
         echo json_encode(['success' => true, 'hash' => hash('sha256', $pdfContent)]);
     } else {
@@ -57,6 +71,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
 // COMUNICACIÓN CON HERMES (API)
 // --------------------------------------------------------------------------------------
 $ch = curl_init();
+
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
@@ -75,18 +90,18 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
     debugLog("Enviando petición de creación a Hermes con URLs limpias.");
 } 
-elseif ($action === 'activate' && $method === 'PUT') {
+elseif ($action === 'activate' && ($method === 'PUT' || $method === 'POST')) {
     $input = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($input);
     
-    // KRILLIN FIX: Ahora concatena de forma limpia el UUID enviado por el cliente
-    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $docId . '/activate');
-    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "PUT");
+    // Manda exactamente la URL como en Postman
+    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId) . '/activate');
+    curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $input);
-    debugLog("Enviando PUT de activación a Hermes para UUID: $docId");
+    debugLog("Enviando $method de activación a Hermes para UUID: $docId");
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $docId);
+    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId));
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE"); 
     debugLog("Enviando DELETE a Hermes para UUID: $docId");
 } 
