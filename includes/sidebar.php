@@ -2,8 +2,8 @@
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-20
-// Versión: 1.7
-// Descripción: Panel lateral. Se actualizó la sección inferior de "Configuración" transformándola en un menú colapsable e integrando el nuevo acceso directo a la "Bóveda Legal" (Gestión de Documentos Legales).
+// Versión: 1.8
+// Descripción: Panel lateral. Se integró el acceso directo al nuevo reporte de "Detalle de Sesiones" dentro del menú de Analíticas.
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -36,11 +36,12 @@
                         <i class="ph ph-chart-line-up text-xl mr-3"></i>
                         <span class="nav-label">Analíticas</span>
                     </div>
-                    <i id="icon-analytics" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
+                    <i id="icon-analytics" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label rotate-180"></i>
                 </button>
-                <div id="submenu-analytics" class="submenu pl-11 pr-3">
+                <div id="submenu-analytics" class="submenu open pl-11 pr-3">
                     <a href="schema.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Schema (Data)</a>
                     <a href="customers.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Reporte de Clientes</a>
+                    <a href="sessions_report.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Detalle de Sesiones</a>
                 </div>
             </div>
 

@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-16
-// Versión: 1.13
-// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'top_events' para consumir el nuevo endpoint de Hermes /admin/analytics/events/top.
+// Fecha: 2026-05-20
+// Versión: 1.14
+// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'sessions_detail' para consumir el nuevo endpoint de Hermes que devuelve el listado detallado de sesiones individuales.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -79,8 +79,10 @@ if ($action === 'kpis') {
 } elseif ($action === 'dayparting') {
     $endpoint = "/admin/dashboard/dayparting-stats?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'top_events') {
-    // NUEVO: Endpoint directo de Hermes para Top 10 Eventos
     $endpoint = "/admin/analytics/events/top?startDate={$startDate}&endDate={$endDate}";
+} elseif ($action === 'sessions_detail') {
+    // NUEVO: Endpoint directo a Hermes para el reporte desglosado de sesiones
+    $endpoint = "/admin/analytics/sessions/detail?startDate={$startDate}&endDate={$endDate}&page={$page}";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");
     echo json_encode(['success' => false, 'message' => 'Acción inválida solicitada al proxy']);
