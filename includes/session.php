@@ -1,16 +1,30 @@
 <?php
 // Nombre del archivo: session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 2.0
-// Descripción: Inicialización centralizada de sesiones para Commander. Se aumentó el tiempo de expiración de las cookies y del recolector de basura del servidor a 60 días para mantener la sesión de los administradores activa de forma prolongada y evitar el reingreso diario.
+// Fecha: 2026-05-22
+// Versión: 2.1
+// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia.
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
 $segundos_sesion = 60 * 60 * 24 * $dias_sesion;
 
-// 1. Configurar el Garbage Collector del servidor para que no borre el archivo temporal
+// KRILLIN FIX: Aislamos las sesiones en una carpeta propia dentro de 'includes'
+// para que el cron de limpieza nocturno del servidor no nos las elimine.
+$session_path = __DIR__ . '/sessions_data';
+if (!is_dir($session_path)) {
+    mkdir($session_path, 0755, true);
+    // Creamos un .htaccess rápido por seguridad para evitar cualquier acceso web directo
+    file_put_contents($session_path . '/.htaccess', 'Require all denied');
+}
+session_save_path($session_path);
+
+// 1. Configurar el Garbage Collector del servidor para nuestra carpeta
 ini_set('session.gc_maxlifetime', $segundos_sesion);
+
+// Le decimos a PHP que él mismo se encargue de limpiar esta carpeta con su propio GC
+ini_set('session.gc_probability', 1);
+ini_set('session.gc_divisor', 100);
 
 // 2. Configurar parámetros estrictos y de larga duración para la Cookie de PHP
 session_set_cookie_params([

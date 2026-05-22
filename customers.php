@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: customers.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-09
-// Versión: 2.3
-// Descripción: Se modificó la columna de Nacimiento para mostrar la Edad calculada dinámicamente al día actual. Se reemplazó el valor numérico del IMC por su categoría médica (Bajo peso, Normal, Sobrepeso, Obesidad) calculada en tiempo real a partir del peso y la estatura, implementando colores semánticos para facilitar su lectura.
+// Fecha: 2026-05-22
+// Versión: 2.4
+// Descripción: Se modificó la columna de Nacimiento para mostrar la Edad calculada dinámicamente al día actual. Se reemplazó el valor numérico del IMC por su categoría médica (Bajo peso, Normal, Sobrepeso, Obesidad) calculada en tiempo real a partir del peso y la estatura, implementando colores semánticos para facilitar su lectura. Adicionalmente, se actualizó la función parseLocale para soportar códigos de región separados tanto por guión bajo (_) como por guión medio (-).
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -77,11 +77,12 @@ ob_start();
             'PE': 'Perú'
         };
 
-        // Función que separa y embellece el locale (ej: es_MX -> { lang: 'Español', country: '🇲🇽 México' })
+        // Función que separa y embellece el locale (ej: es_MX o es-MX -> { lang: 'Español', country: '🇲🇽 México' })
         function parseLocale(locale) {
             if (!locale) return { lang: '<span class="text-gray-400">N/A</span>', country: '<span class="text-gray-400">N/A</span>' };
             try {
-                const parts = locale.split('_');
+                // Krillin Fix: Separamos usando regex para aceptar guión bajo (_) o guión medio (-)
+                const parts = locale.split(/_|-/);
                 const langCode = parts[0].toLowerCase();
                 const countryCode = parts.length > 1 ? parts[1].toUpperCase() : '';
 
