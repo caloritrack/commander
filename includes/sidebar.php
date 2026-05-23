@@ -2,8 +2,8 @@
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-23
-// Versión: 1.12
-// Descripción: Panel lateral. Se eliminaron las clases hardcodeadas (bold y color activo) en 'Unidades de Medida' y 'Detalle de Sesiones' para unificar el diseño con el resto del menú. Además, se agregó detección dinámica de página actual ($current_page) para que el ítem activo se resalte automáticamente.
+// Versión: 1.13
+// Descripción: Panel lateral. Se agregó la ruta al nuevo CRUD de Platillos dentro del submenú de Alimentación.
 
 // Detectamos la página actual para marcar la navegación activa
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -62,6 +62,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 </button>
                 <div id="submenu-food" class="submenu pl-11 pr-3 mt-1 open">
                     <a href="alimentos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'alimentos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo Maestro</a>
+                    <a href="platillos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'platillos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo de Platillos</a>
                     <a href="unidades_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'unidades_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Unidades de Medida</a>
                 </div>
             </div>
