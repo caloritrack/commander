@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 1.10
-// Descripción: Panel lateral. Se agregó el enlace funcional hacia alimentos_catalog.php dentro de la sección Alimentación.
+// Fecha: 2026-05-23
+// Versión: 1.11
+// Descripción: Panel lateral. Se agregó el enlace funcional hacia unidades_catalog.php dentro de la sección Alimentación.
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -59,7 +59,8 @@
                     <i id="icon-food" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-food" class="submenu pl-11 pr-3 mt-1 open">
-                    <a href="alimentos_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Catálogo Maestro</a>
+                    <a href="alimentos_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Catálogo Maestro</a>
+                    <a href="unidades_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Unidades de Medida</a>
                 </div>
             </div>
 
