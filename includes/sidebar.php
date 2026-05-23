@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 1.8
-// Descripción: Panel lateral. Se integró el acceso directo al nuevo reporte de "Detalle de Sesiones" dentro del menú de Analíticas.
+// Fecha: 2026-05-22
+// Versión: 1.10
+// Descripción: Panel lateral. Se agregó el enlace funcional hacia alimentos_catalog.php dentro de la sección Alimentación.
 
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
@@ -51,6 +51,19 @@
             </a>
 
             <div>
+                <button onclick="toggleSubmenu('submenu-food', 'icon-food')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-calori-50 dark:hover:bg-calori-900/20 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-apple-logo text-xl mr-3"></i>
+                        <span class="nav-label">Alimentación</span>
+                    </div>
+                    <i id="icon-food" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
+                </button>
+                <div id="submenu-food" class="submenu pl-11 pr-3 mt-1 open">
+                    <a href="alimentos_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Catálogo Maestro</a>
+                </div>
+            </div>
+
+            <div>
                 <button onclick="toggleSubmenu('submenu-kai', 'icon-kai')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
                     <div class="flex items-center">
                         <i class="ph ph-brain text-xl mr-3"></i>
@@ -77,6 +90,20 @@
                     <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Hermes</a>
                 </div>
             </div>
+
+            <div>
+                <button onclick="toggleSubmenu('submenu-legal', 'icon-legal')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 rounded-xl font-medium transition-colors focus:outline-none">
+                    <div class="flex items-center">
+                        <i class="ph ph-scales text-xl mr-3"></i>
+                        <span class="nav-label">Legal</span>
+                    </div>
+                    <i id="icon-legal" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
+                </button>
+                <div id="submenu-legal" class="submenu pl-11 pr-3 mt-1">
+                    <a href="legal_documents.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bóveda Legal</a>
+                </div>
+            </div>
+
         </nav>
 
         <div class="p-4 border-t border-gray-100/50 dark:border-gray-800">
@@ -89,7 +116,7 @@
                     <i id="icon-settings" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-settings" class="submenu pl-11 pr-3 mt-1">
-                    <a href="legal_documents.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bóveda Legal</a>
+                    <a href="#" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Preferencias Generales</a>
                 </div>
             </div>
         </div>
