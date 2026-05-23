@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 1.2
-// Descripción: Interfaz gráfica (CRUD) para el Catálogo Maestro Global de Alimentos Bilingüe. Se actualizó la carga de imágenes para utilizar la ruta base 'https://api.caloritrack.com/images/food/' y se añadió un fallback 'onerror' para mostrar un ícono limpio cuando la imagen está rota o no existe.
+// Fecha: 2026-05-23
+// Versión: 1.3
+// Descripción: Interfaz gráfica (CRUD) para el Catálogo Maestro de Alimentos. Se agregó la integración completa de la Pestaña de Equivalencias (Unidades de medida relacionales por alimento).
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -29,6 +29,10 @@ ob_start();
         let currentPage = 1;
         let totalPages = 1;
         let currentAlimentoId = null;
+        
+        // Variables para Equivalencias
+        let currentEquivId = null;
+        let cacheUnidades = [];
 
         function toggleSubmenu(submenuId, iconId) {
             const submenu = document.getElementById(submenuId);
@@ -86,7 +90,6 @@ ob_start();
             
             loader.classList.remove('hidden');
             tableCont.classList.add('hidden');
-
             try {
                 const res = await fetch(`ajax_alimentos.php?action=list&page=${page}&limit=50&search=${encodeURIComponent(searchVal)}`);
                 const json = await res.json();
@@ -116,7 +119,6 @@ ob_start();
                             const certBadge = item.certificado_caloritrack
                                 ? `<i class="ph-fill ph-seal-check text-calori-500 text-lg ml-1" title="Certificado CaloriTrack"></i>` : '';
 
-                            // Lógica de Imagen con Ruta Base y Fallback de Rota
                             let imgSrc = '';
                             if (item.url_imagen && item.url_imagen.trim() !== '') {
                                 imgSrc = item.url_imagen.startsWith('http') ? item.url_imagen : 'https://api.caloritrack.com/foodimages/food/' + item.url_imagen;
@@ -125,7 +127,7 @@ ob_start();
                             const imgHtml = imgSrc 
                                 ? `<img src="${imgSrc}" alt="IMG" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\\'ph ph-image-broken text-gray-400 text-2xl\\\'></i>';">` 
                                 : `<i class="ph ph-image text-gray-400 text-2xl"></i>`;
-
+                            
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                                     <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">${item.id_alimento}</td>
@@ -153,7 +155,7 @@ ob_start();
                                     <td class="py-3 px-4 whitespace-nowrap">${publicBadge}</td>
                                     <td class="py-3 px-4 whitespace-nowrap">
                                         <div class="flex items-center gap-2">
-                                            <button onclick="openFormModal(${item.id_alimento})" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Editar"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                            <button onclick="openFormModal(${item.id_alimento})" class="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors" title="Editar / Equivalencias"><i class="ph ph-pencil-simple text-lg"></i></button>
                                             <button onclick="confirmDelete(${item.id_alimento})" class="p-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors" title="Eliminar"><i class="ph ph-trash text-lg"></i></button>
                                         </div>
                                     </td>
@@ -171,22 +173,34 @@ ob_start();
             }
         }
 
-        // --- Manejo del Formulario (Crear/Editar) ---
+        // --- Manejo del Formulario Principal (Alimento) ---
         async function openFormModal(id = null) {
             currentAlimentoId = id;
             document.getElementById('formModal').classList.remove('hidden');
             document.getElementById('formTitle').innerText = id ? 'Editar Alimento' : 'Nuevo Alimento Maestro';
             document.getElementById('formAlimento').reset();
             switchTab('general'); // Regresa a la pestaña principal por defecto
+            
+            // Lógica UX de la pestaña Equivalencias
+            if (id) {
+                document.getElementById('msgEquivNew').classList.add('hidden');
+                document.getElementById('btnShowAddEquiv').classList.remove('hidden');
+                document.getElementById('tablaEquivContainer').classList.remove('hidden');
+                loadUnidadesForSelect();
+                loadEquivalencias(id);
+            } else {
+                document.getElementById('msgEquivNew').classList.remove('hidden');
+                document.getElementById('btnShowAddEquiv').classList.add('hidden');
+                document.getElementById('tablaEquivContainer').classList.add('hidden');
+                hideEquivForm();
+            }
 
             if(id) {
-                // Cargar datos existentes
                 try {
                     const res = await fetch(`ajax_alimentos.php?action=get&id=${id}`);
                     const json = await res.json();
                     if(json.success && json.data.data) {
                         const item = json.data.data;
-                        // Mapeo automático de llaves de la API al formulario si los id de los inputs coinciden
                         for(let key in item) {
                             let input = document.getElementById('inp_' + key);
                             if(input) {
@@ -213,7 +227,6 @@ ob_start();
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
 
-            // Construir payload juntando todos los inputs con prefijo 'inp_'
             let payload = {};
             document.querySelectorAll('#formAlimento input, #formAlimento select, #formAlimento textarea').forEach(el => {
                 if(el.id && el.id.startsWith('inp_')) {
@@ -224,9 +237,8 @@ ob_start();
                 }
             });
 
-            const action = currentAlimentoId ? 'update' : 'create';
             const endpoint = currentAlimentoId ? `ajax_alimentos.php?action=update&id=${currentAlimentoId}` : `ajax_alimentos.php?action=create`;
-
+            
             try {
                 const res = await fetch(endpoint, {
                     method: currentAlimentoId ? 'PUT' : 'POST',
@@ -249,6 +261,149 @@ ob_start();
                 btn.disabled = false;
             }
         }
+
+        // ==========================================
+        //  LÓGICA DE GESTIÓN DE EQUIVALENCIAS
+        // ==========================================
+        async function loadUnidadesForSelect() {
+            if (cacheUnidades.length > 0) return; // Si ya lo cargamos, lo reusamos (Performance)
+            try {
+                const res = await fetch('ajax_unidades.php?action=list');
+                const json = await res.json();
+                if (json.success && json.data) {
+                    cacheUnidades = json.data.data || [];
+                    const sel = document.getElementById('sel_unidad_equiv');
+                    sel.innerHTML = '<option value="">Selecciona unidad...</option>';
+                    cacheUnidades.forEach(u => {
+                        sel.innerHTML += `<option value="${u.id_unidad}">${u.nombre_clave} (${u.simbolo})</option>`;
+                    });
+                }
+            } catch(e) { console.error('Error al poblar listado de unidades', e); }
+        }
+
+        async function loadEquivalencias(idAlimento) {
+            const tbody = document.getElementById('tbodyEquivalencias');
+            tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4"><i class="ph ph-spinner animate-spin text-calori-500 text-xl"></i></td></tr>';
+            hideEquivForm();
+
+            try {
+                const res = await fetch(`ajax_equivalencias.php?action=list&id_alimento=${idAlimento}`);
+                const json = await res.json();
+                
+                if (json.success) {
+                    const equivs = json.data || [];
+                    let html = '';
+                    if(equivs.length === 0) {
+                        html = '<tr><td colspan="4" class="text-center py-8 text-sm text-gray-500 font-medium">Este alimento no tiene medidas asignadas.</td></tr>';
+                    } else {
+                        equivs.forEach(eq => {
+                            html += `
+                                <tr class="hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors">
+                                    <td class="py-3 px-4 text-sm font-bold text-gray-700 dark:text-gray-300 capitalize">${eq.nombre_clave}</td>
+                                    <td class="py-3 px-4">
+                                        <span class="px-2 py-1 bg-calori-50 dark:bg-calori-900/30 text-calori-600 dark:text-calori-400 font-bold rounded-lg border border-calori-100 dark:border-calori-800 text-xs">${eq.simbolo}</span>
+                                    </td>
+                                    <td class="py-3 px-4 text-sm text-gray-600 dark:text-gray-400 font-mono">${eq.gramos_equivalentes} g/ml</td>
+                                    <td class="py-3 px-4 text-center">
+                                        <div class="flex items-center justify-center gap-2">
+                                            <button type="button" onclick="editEquivalencia(${eq.id_equivalencia}, ${eq.id_unidad}, ${eq.gramos_equivalentes})" class="p-2 text-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-lg transition-colors" title="Editar"><i class="ph ph-pencil-simple text-lg"></i></button>
+                                            <button type="button" onclick="deleteEquivalencia(${eq.id_equivalencia})" class="p-2 text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-colors" title="Eliminar"><i class="ph ph-trash text-lg"></i></button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            `;
+                        });
+                    }
+                    tbody.innerHTML = html;
+                }
+            } catch(e) {
+                tbody.innerHTML = '<tr><td colspan="4" class="text-center py-4 text-sm text-red-500">Error leyendo de Hermes.</td></tr>';
+            }
+        }
+
+        function showEquivForm() {
+            currentEquivId = null;
+            document.getElementById('formEquivalencia').reset();
+            document.getElementById('sel_unidad_equiv').disabled = false; // Se puede seleccionar unidad porque es nuevo
+            document.getElementById('formEquivalenciaContainer').classList.remove('hidden');
+            document.getElementById('btnShowAddEquiv').classList.add('hidden');
+        }
+
+        function editEquivalencia(idEquiv, idUnidad, gramos) {
+            currentEquivId = idEquiv;
+            document.getElementById('sel_unidad_equiv').value = idUnidad;
+            document.getElementById('sel_unidad_equiv').disabled = true; // Hermes dicta que no se cambia el ID en PUT
+            document.getElementById('inp_gramos_equiv').value = gramos;
+            
+            document.getElementById('formEquivalenciaContainer').classList.remove('hidden');
+            document.getElementById('btnShowAddEquiv').classList.add('hidden');
+        }
+
+        function hideEquivForm() {
+            document.getElementById('formEquivalenciaContainer').classList.add('hidden');
+            document.getElementById('btnShowAddEquiv').classList.remove('hidden');
+        }
+
+        async function saveEquivalencia(event) {
+            event.preventDefault();
+            const btn = document.getElementById('btnSaveEquiv');
+            btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i>';
+            btn.disabled = true;
+
+            const idUnidad = document.getElementById('sel_unidad_equiv').value;
+            const gramos = document.getElementById('inp_gramos_equiv').value;
+
+            const payload = currentEquivId 
+                ? { gramos_equivalentes: parseFloat(gramos) } // Si edita, solo mandamos los gramos
+                : { id_unidad: parseInt(idUnidad), gramos_equivalentes: parseFloat(gramos) }; // Si es nuevo, mandamos unidad y gramos
+
+            const endpoint = currentEquivId 
+                ? `ajax_equivalencias.php?action=update&id_alimento=${currentAlimentoId}&id_equivalencia=${currentEquivId}` 
+                : `ajax_equivalencias.php?action=create&id_alimento=${currentAlimentoId}`;
+
+            try {
+                const res = await fetch(endpoint, {
+                    method: currentEquivId ? 'PUT' : 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const json = await res.json();
+
+                if (json.success || json.http_code === 201 || json.http_code === 200) {
+                    showToast(currentEquivId ? "Equivalencia actualizada." : "Equivalencia guardada.", "success");
+                    loadEquivalencias(currentAlimentoId); // Recargamos sub-tabla
+                } else if (json.http_code === 409) {
+                    showToast("Atención: Esa unidad ya está asignada a este alimento.", "warning");
+                } else {
+                    showToast("Error: " + (json.data?.message || 'Revisa los datos enviados.'), "error");
+                }
+            } catch (error) {
+                showToast("Error de red al guardar equivalencia.", "error");
+            } finally {
+                btn.innerHTML = 'Guardar';
+                btn.disabled = false;
+            }
+        }
+
+        async function deleteEquivalencia(idEquiv) {
+            if (!confirm('¿Estás seguro de eliminar esta medida del alimento?')) return;
+            
+            try {
+                const res = await fetch(`ajax_equivalencias.php?action=delete&id_alimento=${currentAlimentoId}&id_equivalencia=${idEquiv}`, { method: 'DELETE' });
+                const json = await res.json();
+                
+                if (json.success || json.http_code === 200) {
+                    showToast("Medida eliminada.", "success");
+                    loadEquivalencias(currentAlimentoId);
+                } else {
+                    showToast("No se pudo eliminar la medida.", "error");
+                }
+            } catch (err) {
+                showToast("Error de red.", "error");
+            }
+        }
+        // ==========================================
+
 
         // --- Eliminar Alimento (Protección Relacional) ---
         let deleteId = null;
@@ -275,7 +430,6 @@ ob_start();
                     closeDeleteModal();
                     loadAlimentos(currentPage);
                 } else if (json.http_code === 409) {
-                    // API 409 Conflict: ER_ROW_IS_REFERENCED
                     closeDeleteModal();
                     document.getElementById('modalConflict').classList.remove('hidden');
                 } else {
@@ -397,9 +551,65 @@ require_once __DIR__ . '/includes/header.php';
                 <button type="button" id="btn-tab-vitaminas" onclick="switchTab('vitaminas')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Vitaminas</button>
                 <button type="button" id="btn-tab-minerales" onclick="switchTab('minerales')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Minerales</button>
                 <button type="button" id="btn-tab-anti" onclick="switchTab('anti')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Antinutrientes</button>
+                <button type="button" id="btn-tab-equiv" onclick="switchTab('equiv')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 whitespace-nowrap"><i class="ph ph-scales mr-1"></i>Equivalencias</button>
             </div>
 
-            <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-900/50">
+            <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-900/50 relative">
+                <div id="tab-equiv" class="tab-content hidden animate-fade-in space-y-6">
+                    <div class="bg-blue-50/30 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
+                        <div class="flex justify-between items-center mb-6">
+                            <div>
+                                <h4 class="font-black text-blue-900 dark:text-blue-400 flex items-center"><i class="ph-fill ph-scales text-xl mr-2"></i> Medidas y Porciones</h4>
+                                <p class="text-xs text-blue-600/70 dark:text-blue-400/70 mt-1">Asigna unidades de medida y su conversión en gramos.</p>
+                            </div>
+                            <button type="button" id="btnShowAddEquiv" onclick="showEquivForm()" class="px-4 py-2 bg-blue-600 text-white rounded-xl text-sm font-bold hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all hidden">
+                                <i class="ph ph-plus-circle mr-1"></i> Nueva Medida
+                            </button>
+                        </div>
+
+                        <div id="msgEquivNew" class="p-6 bg-white dark:bg-darkbase-800 rounded-xl text-center border border-dashed border-blue-300 dark:border-blue-700">
+                            <div class="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 text-blue-500 rounded-full flex items-center justify-center mx-auto mb-3"><i class="ph ph-lock-key text-xl"></i></div>
+                            <h5 class="text-sm font-bold text-gray-800 dark:text-gray-200">Sección Bloqueada</h5>
+                            <p class="text-xs text-gray-500 mt-1">Guarda la información general del alimento maestro primero para poder asignarle equivalencias en esta sección.</p>
+                        </div>
+
+                        <div id="formEquivalenciaContainer" class="hidden bg-white dark:bg-darkbase-800 p-5 rounded-xl shadow-sm border border-blue-200 dark:border-blue-800 mb-6">
+                            <form id="formEquivalencia" onsubmit="saveEquivalencia(event)" class="flex flex-col md:flex-row md:items-end gap-4">
+                                <div class="flex-1">
+                                    <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Unidad de Medida</label>
+                                    <select id="sel_unidad_equiv" required class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white transition-colors">
+                                    </select>
+                                </div>
+                                <div class="flex-1">
+                                    <label class="block text-[11px] font-bold text-gray-500 uppercase mb-1">Equivalencia en Gramos (g)</label>
+                                    <input type="number" step="0.01" id="inp_gramos_equiv" placeholder="Ej. 15.50" required class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-4 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white transition-colors">
+                                </div>
+                                <div class="flex gap-2">
+                                    <button type="button" onclick="hideEquivForm()" class="px-5 py-2 bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 font-bold rounded-lg text-sm hover:bg-gray-200 transition-colors">Cancelar</button>
+                                    <button type="submit" id="btnSaveEquiv" class="px-5 py-2 bg-blue-600 text-white font-bold rounded-lg text-sm hover:bg-blue-700 shadow-lg shadow-blue-600/30 transition-all flex items-center">
+                                        Guardar
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+
+                        <div id="tablaEquivContainer" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 hidden bg-white dark:bg-darkbase-800 shadow-sm">
+                            <table class="w-full text-left">
+                                <thead class="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                                    <tr>
+                                        <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unidad Maestro</th>
+                                        <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Símbolo</th>
+                                        <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Conversión (g)</th>
+                                        <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider text-center">Acciones</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="tbodyEquivalencias" class="divide-y divide-gray-100 dark:divide-gray-800">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
                 <form id="formAlimento" onsubmit="saveAlimento(event)">
                     
                     <div id="tab-general" class="tab-content space-y-6 animate-fade-in">
@@ -551,7 +761,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
 
                     <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm -mx-6 px-6 pb-2">
-                        <button type="button" onclick="closeFormModal()" class="px-5 py-2.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">Cancelar</button>
+                        <button type="button" onclick="closeFormModal()" class="px-5 py-2.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">Cerrar Tablero</button>
                         <button type="submit" id="btnSave" class="px-5 py-2.5 bg-calori-600 text-white font-bold rounded-xl hover:bg-calori-700 shadow-lg shadow-calori-600/30 transition-all flex items-center gap-2">
                             Guardar Alimento
                         </button>

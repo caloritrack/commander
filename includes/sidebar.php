@@ -2,9 +2,11 @@
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-23
-// Versión: 1.11
-// Descripción: Panel lateral. Se agregó el enlace funcional hacia unidades_catalog.php dentro de la sección Alimentación.
+// Versión: 1.12
+// Descripción: Panel lateral. Se eliminaron las clases hardcodeadas (bold y color activo) en 'Unidades de Medida' y 'Detalle de Sesiones' para unificar el diseño con el resto del menú. Además, se agregó detección dinámica de página actual ($current_page) para que el ítem activo se resalte automáticamente.
 
+// Detectamos la página actual para marcar la navegación activa
+$current_page = basename($_SERVER['PHP_SELF']);
 ?>
     <aside id="main-sidebar" class="w-64 bg-white/80 dark:bg-darkbase-950/80 backdrop-blur-xl border-r border-white/50 dark:border-gray-800 flex flex-col z-20 shadow-[4px_0_24px_rgba(0,0,0,0.02)] transition-all duration-300">
         <div class="h-20 flex items-center px-6 border-b border-gray-100/50 dark:border-gray-800">
@@ -20,13 +22,13 @@
                 <button onclick="toggleSubmenu('submenu-dashboards', 'icon-dashboards')" class="nav-item w-full flex items-center justify-between px-3 py-2.5 text-gray-600 dark:text-gray-400 hover:bg-calori-50 dark:hover:bg-calori-900/20 rounded-xl font-medium transition-colors focus:outline-none">
                     <div class="flex items-center">
                         <i class="ph ph-squares-four text-xl mr-3"></i>
-                        <span class="nav-label">Dashboards Joshua</span>
+                        <span class="nav-label">Dashboard</span>
                     </div>
                     <i id="icon-dashboards" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label rotate-180"></i>
                 </button>
                 <div id="submenu-dashboards" class="submenu open pl-11 pr-3">
-                    <a href="dashboard.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Global (General)</a>
-                    <a href="dashboard_growth.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Retención y Growth</a>
+                    <a href="dashboard.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'dashboard.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Global (General)</a>
+                    <a href="dashboard_growth.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'dashboard_growth.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Retención y Growth</a>
                 </div>
             </div>
 
@@ -39,9 +41,9 @@
                     <i id="icon-analytics" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label rotate-180"></i>
                 </button>
                 <div id="submenu-analytics" class="submenu open pl-11 pr-3">
-                    <a href="schema.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Schema (Data)</a>
-                    <a href="customers.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Reporte de Clientes</a>
-                    <a href="sessions_report.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Detalle de Sesiones</a>
+                    <a href="schema.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'schema.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Schema (Data)</a>
+                    <a href="customers.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'customers.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Reporte de Clientes</a>
+                    <a href="sessions_report.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'sessions_report.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Detalle de Sesiones</a>
                 </div>
             </div>
 
@@ -59,8 +61,8 @@
                     <i id="icon-food" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-food" class="submenu pl-11 pr-3 mt-1 open">
-                    <a href="alimentos_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Catálogo Maestro</a>
-                    <a href="unidades_catalog.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors font-semibold text-calori-600 dark:text-calori-500">Unidades de Medida</a>
+                    <a href="alimentos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'alimentos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo Maestro</a>
+                    <a href="unidades_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'unidades_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Unidades de Medida</a>
                 </div>
             </div>
 
@@ -101,7 +103,7 @@
                     <i id="icon-legal" class="ph ph-caret-down text-sm transition-transform duration-300 nav-label"></i>
                 </button>
                 <div id="submenu-legal" class="submenu pl-11 pr-3 mt-1">
-                    <a href="legal_documents.php" class="block py-2 text-sm text-gray-500 hover:text-calori-600 transition-colors">Bóveda Legal</a>
+                    <a href="legal_documents.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'legal_documents.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Bóveda Legal</a>
                 </div>
             </div>
 
