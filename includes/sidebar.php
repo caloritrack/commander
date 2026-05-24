@@ -2,8 +2,8 @@
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-23
-// Versión: 1.13
-// Descripción: Panel lateral. Se agregó la ruta al nuevo CRUD de Platillos dentro del submenú de Alimentación.
+// Versión: 1.14
+// Descripción: Panel lateral actualizado. Se integró la ruta hacia el nuevo Catálogo de Dietas dentro de la sección de Alimentación.
 
 // Detectamos la página actual para marcar la navegación activa
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -63,6 +63,7 @@ $current_page = basename($_SERVER['PHP_SELF']);
                 <div id="submenu-food" class="submenu pl-11 pr-3 mt-1 open">
                     <a href="alimentos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'alimentos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo Maestro</a>
                     <a href="platillos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'platillos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo de Platillos</a>
+                    <a href="dietas_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'dietas_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo de Dietas</a>
                     <a href="unidades_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'unidades_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Unidades de Medida</a>
                 </div>
             </div>
