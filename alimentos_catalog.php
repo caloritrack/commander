@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.3
-// Descripción: Interfaz gráfica (CRUD) para el Catálogo Maestro de Alimentos. Se agregó la integración completa de la Pestaña de Equivalencias (Unidades de medida relacionales por alimento).
+// Fecha: 2026-05-25
+// Versión: 1.4
+// Descripción: Se integraron los campos de measurement_unit (g/ml) y las 8 banderas de alérgenos/restricciones dietéticas en la interfaz, con una nueva pestaña dedicada a Alérgenos.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -119,6 +119,14 @@ ob_start();
                             const certBadge = item.certificado_caloritrack
                                 ? `<i class="ph-fill ph-seal-check text-calori-500 text-lg ml-1" title="Certificado CaloriTrack"></i>` : '';
 
+                            // Evaluamos si tiene algún alérgeno activado
+                            const hasAllergens = item.contains_gluten || item.contains_egg || item.contains_tree_nut || item.contains_peanut || item.contains_soy || item.contains_shellfish || item.contains_fish || item.is_pork;
+                            const alergenosBadge = hasAllergens 
+                                ? `<i class="ph-fill ph-warning-circle text-orange-500 text-lg ml-1" title="Contiene alérgenos o restricciones (Revisar Ficha)"></i>` : '';
+
+                            // Evaluamos unidad base (por defecto gramos)
+                            const baseUnit = item.measurement_unit || 'g';
+
                             let imgSrc = '';
                             if (item.url_imagen && item.url_imagen.trim() !== '') {
                                 imgSrc = item.url_imagen.startsWith('http') ? item.url_imagen : 'https://api.caloritrack.com/foodimages/food/' + item.url_imagen;
@@ -127,7 +135,7 @@ ob_start();
                             const imgHtml = imgSrc 
                                 ? `<img src="${imgSrc}" alt="IMG" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\\'ph ph-image-broken text-gray-400 text-2xl\\\'></i>';">` 
                                 : `<i class="ph ph-image text-gray-400 text-2xl"></i>`;
-                            
+                                
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                                     <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">${item.id_alimento}</td>
@@ -139,12 +147,12 @@ ob_start();
                                     <td class="py-3 px-4">
                                         <div class="flex items-center">
                                             <p class="text-sm font-bold text-gray-900 dark:text-white">${item.nombre_es || 'Sin Nombre'}</p>
-                                            ${certBadge}
+                                            ${certBadge} ${alergenosBadge}
                                         </div>
                                         <p class="text-xs text-gray-500 italic">${item.nombre_en || 'No translation'}</p>
                                     </td>
                                     <td class="py-3 px-4 whitespace-nowrap">
-                                        <p class="text-sm font-bold text-gray-700 dark:text-gray-300">${item.calorias_100g} <span class="text-[10px] font-normal">kcal</span></p>
+                                        <p class="text-sm font-bold text-gray-700 dark:text-gray-300">${item.calorias_100g} <span class="text-[10px] font-normal">kcal / 100${baseUnit}</span></p>
                                         <div class="flex gap-1 text-[10px] text-gray-500 mt-0.5">
                                             <span title="Carbs">C:${item.carbohidratos}g</span>|
                                             <span title="Proteína">P:${item.proteinas}g</span>|
@@ -334,7 +342,6 @@ ob_start();
             document.getElementById('sel_unidad_equiv').value = idUnidad;
             document.getElementById('sel_unidad_equiv').disabled = true; // Hermes dicta que no se cambia el ID en PUT
             document.getElementById('inp_gramos_equiv').value = gramos;
-            
             document.getElementById('formEquivalenciaContainer').classList.remove('hidden');
             document.getElementById('btnShowAddEquiv').classList.add('hidden');
         }
@@ -387,7 +394,6 @@ ob_start();
 
         async function deleteEquivalencia(idEquiv) {
             if (!confirm('¿Estás seguro de eliminar esta medida del alimento?')) return;
-            
             try {
                 const res = await fetch(`ajax_equivalencias.php?action=delete&id_alimento=${currentAlimentoId}&id_equivalencia=${idEquiv}`, { method: 'DELETE' });
                 const json = await res.json();
@@ -495,7 +501,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div class="mb-4">
-                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Registros Globales: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
+                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Registros Globales: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
             </div>
 
             <div id="tableLoader" class="flex-1 flex flex-col items-center justify-center">
@@ -511,7 +517,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">ID</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider w-16">Img</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Nombre (ES / EN)</th>
-                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Porción 100g</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Porción Base (100g/ml)</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Marca</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Visibilidad</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Acciones</th>
@@ -551,6 +557,7 @@ require_once __DIR__ . '/includes/header.php';
                 <button type="button" id="btn-tab-vitaminas" onclick="switchTab('vitaminas')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Vitaminas</button>
                 <button type="button" id="btn-tab-minerales" onclick="switchTab('minerales')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Minerales</button>
                 <button type="button" id="btn-tab-anti" onclick="switchTab('anti')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap">Antinutrientes</button>
+                <button type="button" id="btn-tab-alergenos" onclick="switchTab('alergenos')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap"><i class="ph-fill ph-warning-circle mr-1"></i>Alérgenos</button>
                 <button type="button" id="btn-tab-equiv" onclick="switchTab('equiv')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 whitespace-nowrap"><i class="ph ph-scales mr-1"></i>Equivalencias</button>
             </div>
 
@@ -590,7 +597,7 @@ require_once __DIR__ . '/includes/header.php';
                                         Guardar
                                     </button>
                                 </div>
-                            </form>
+                             </form>
                         </div>
 
                         <div id="tablaEquivContainer" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 hidden bg-white dark:bg-darkbase-800 shadow-sm">
@@ -654,6 +661,13 @@ require_once __DIR__ . '/includes/header.php';
                                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Marca (Opcional)</label>
                                 <input type="text" id="inp_marca" class="w-full bg-white dark:bg-darkbase-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none dark:text-white">
                             </div>
+                            <div>
+                                <label class="block text-xs font-bold text-calori-600 dark:text-calori-500 uppercase mb-1">Unidad Base</label>
+                                <select id="inp_measurement_unit" required class="w-full bg-white dark:bg-darkbase-800 border border-calori-200 dark:border-calori-800 rounded-lg px-3 py-2 text-sm outline-none dark:text-white font-bold text-calori-700 dark:text-calori-400 focus:ring-2 focus:ring-calori-500">
+                                    <option value="g">Gramos (g)</option>
+                                    <option value="ml">Mililitros (ml)</option>
+                                </select>
+                            </div>
                         </div>
                         
                         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 bg-blue-50/50 dark:bg-blue-900/10 rounded-xl border border-blue-100 dark:border-blue-900/30">
@@ -665,7 +679,7 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div id="tab-macros" class="tab-content hidden animate-fade-in space-y-6">
                         <div class="bg-orange-50/50 dark:bg-orange-900/10 p-4 rounded-xl border border-orange-100 dark:border-orange-900/30">
-                            <h4 class="font-black text-orange-600 dark:text-orange-400 mb-3 border-b border-orange-200 dark:border-orange-800/50 pb-2">Valores calculados por 100g de porción</h4>
+                            <h4 class="font-black text-orange-600 dark:text-orange-400 mb-3 border-b border-orange-200 dark:border-orange-800/50 pb-2">Valores calculados por base de 100 (g o ml)</h4>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div><label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Calorías (kcal)</label><input type="number" step="0.01" id="inp_calorias_100g" required class="w-full bg-white dark:bg-darkbase-800 border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1.5 text-sm font-bold outline-none dark:text-white"></div>
                                 <div><label class="block text-[10px] font-bold text-gray-500 uppercase mb-1">Carbohidratos (g)</label><input type="number" step="0.01" id="inp_carbohidratos" required class="w-full bg-white dark:bg-darkbase-800 border border-gray-200 dark:border-gray-700 rounded-md px-2 py-1.5 text-sm outline-none dark:text-white"></div>
@@ -740,7 +754,7 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div id="tab-anti" class="tab-content hidden animate-fade-in">
                         <div class="bg-red-50/50 dark:bg-red-900/10 p-4 rounded-xl border border-red-100 dark:border-red-900/30">
-                            <h4 class="font-bold text-red-600 dark:text-red-400 mb-3 border-b border-red-200 dark:border-red-800/50 pb-2 text-sm"><i class="ph-fill ph-shield-warning mr-1"></i> Radar de Antinutrientes y Toxinas (Medición Estricta CaloriTrack)</h4>
+                            <h4 class="font-bold text-red-600 dark:text-red-400 mb-3 border-b border-red-200 dark:border-red-800/50 pb-2 text-sm"><i class="ph-fill ph-shield-warning mr-1"></i> Radar de Antinutrientes y Toxinas</h4>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <div><label class="block text-[10px] font-bold text-red-800 dark:text-red-300 uppercase mb-1">Oxalatos (mg)</label><input type="number" step="0.01" id="inp_oxalatos_mg" value="0.00" class="w-full border border-red-200 dark:border-red-800 bg-white dark:bg-darkbase-900 rounded-md px-2 py-1.5 text-sm dark:text-white outline-none focus:ring-1 focus:ring-red-500"></div>
                                 <div><label class="block text-[10px] font-bold text-red-800 dark:text-red-300 uppercase mb-1">Ácido Fítico (mg)</label><input type="number" step="0.01" id="inp_acido_fitico_mg" value="0.00" class="w-full border border-red-200 dark:border-red-800 bg-white dark:bg-darkbase-900 rounded-md px-2 py-1.5 text-sm dark:text-white outline-none focus:ring-1 focus:ring-red-500"></div>
@@ -756,6 +770,22 @@ require_once __DIR__ . '/includes/header.php';
                                 <div><label class="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Saponinas (mg)</label><input type="number" step="0.01" id="inp_saponinas_mg" value="0.00" class="w-full border rounded-md px-2 py-1 text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-white"></div>
                                 <div><label class="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Micotoxinas (mcg)</label><input type="number" step="0.01" id="inp_micotoxinas_mcg" value="0.00" class="w-full border rounded-md px-2 py-1 text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-white"></div>
                                 <div><label class="block text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase mb-1">Aminas Biógenas</label><input type="number" step="0.01" id="inp_aminas_biogenas_mg" value="0.00" class="w-full border rounded-md px-2 py-1 text-sm bg-gray-50 dark:bg-gray-900 dark:border-gray-700 dark:text-white"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="tab-alergenos" class="tab-content hidden animate-fade-in">
+                        <div class="bg-orange-50/50 dark:bg-orange-900/10 p-5 rounded-xl border border-orange-200 dark:border-orange-800/50">
+                            <h4 class="font-bold text-orange-700 dark:text-orange-400 mb-4 border-b border-orange-200 dark:border-orange-800/50 pb-2"><i class="ph-fill ph-warning-circle mr-1"></i> Marcadores de Alergias y Dietas</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_gluten" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Gluten</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_egg" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Huevo</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_tree_nut" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Frutos Secos</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_peanut" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Cacahuate</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_soy" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Soya</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_shellfish" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Mariscos/Crustáceos</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_fish" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Pescado</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_is_pork" class="w-5 h-5 text-red-600 rounded"><span class="text-sm font-bold text-red-600 dark:text-red-400">Es Cerdo (Pork)</span></label>
                             </div>
                         </div>
                     </div>
