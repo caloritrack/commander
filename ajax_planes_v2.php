@@ -2,8 +2,8 @@
 // Nombre del archivo: ajax_planes_v2.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-25
-// Versión: 1.4
-// Descripción: Controlador Proxy RESTful aislado. Implementación de "Filtro Purificador" para reestructurar el payload JSON y emular exactamente una petición de Postman, evitando rechazos del body-parser de Hermes. 
+// Versión: 1.5
+// Descripción: Controlador Proxy RESTful aislado. Se eliminó el "Filtro Purificador" que corrompía el JSON y se restauró la cabecera Content-Length para garantizar compatibilidad con el body-parser de Hermes.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -35,24 +35,11 @@ $apiUrl = 'https://api.caloritrack.com/admin/planes-v2';
 
 $ch = curl_init();
 
-// KR-FIX: Usamos application/json PURO (Igual que Postman) sin charset, 
-// para evitar que el body-parser de Node lo rechace.
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json'
+    'Content-Type: application/json; charset=utf-8'
 ];
-
-// Función para purificar el JSON (Elimina caracteres invisibles o formatos sucios de JS)
-function purificarPayload($rawInput) {
-    if (empty($rawInput)) return '';
-    $decoded = json_decode($rawInput, true);
-    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
-        // Lo vuelve a armar asegurando que los tipos de datos sean correctos para Node
-        return json_encode($decoded, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
-    }
-    return $rawInput;
-}
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
@@ -74,20 +61,24 @@ elseif ($action === 'get' && $method === 'GET') {
 } 
 elseif ($action === 'create' && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
-    $cleanPayload = purificarPayload($rawInput);
     
+    // KR-FIX: Calculamos y enviamos la longitud exacta para evitar que Node.js rechace el JSON
+    $headers[] = 'Content-Length: ' . strlen($rawInput);
+
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_POST, true);
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $cleanPayload); // Dejamos que cURL calcule los bytes exactos
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput); 
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
-    $cleanPayload = purificarPayload($rawInput);
+    
+    // KR-FIX: También en PUT para mantener la integridad de actualización
+    $headers[] = 'Content-Length: ' . strlen($rawInput);
 
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
-    curl_setopt($ch, CURLOPT_POSTFIELDS, $cleanPayload);
+    curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
@@ -128,14 +119,12 @@ $decodedResponse = json_decode($response, true);
 
 // KR-FIX: Revelar el mensaje REAL de Hermes si revienta con un 500
 if ($httpCode >= 500) {
-    // Tratamos de extraer el error exacto que mandó Node.js
     $hermesExactError = $decodedResponse['message'] ?? $decodedResponse['error'] ?? 'No se especificó la causa exacta en Node.';
     debugLogPlanesV2("CRASHEO HERMES 500: " . $response);
-    
     echo json_encode([
         'success' => false,
         'http_code' => $httpCode,
-        'message' => 'Hermes dice: ' . $hermesExactError, // Esto se verá directo en el Toast
+        'message' => 'Hermes dice: ' . $hermesExactError,
         'data' => [ 'error' => $hermesExactError ]
     ]);
     exit();

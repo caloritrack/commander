@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: planes_v2_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-25
-// Versión: 1.3
-// Descripción: Interfaz gráfica (CRUD) para los nuevos Planes V2. Se corrigió la generación del payload para enviar strings vacíos ("") en lugar de nulos (null) en textos opcionales, empatando con la validación estricta de la API de Hermes. Se mejoró la captura de valores numéricos en ceros.
+// Fecha: 2026-05-26
+// Versión: 1.5
+// Descripción: Interfaz gráfica (CRUD) para los nuevos Planes V2. Se corrigió el valor por defecto de dificultad a "Novato" en el formulario y JS para coincidir exactamente con el ENUM de la base de datos ('Novato', 'Intermedio', 'Avanzado').
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -29,7 +29,7 @@ ob_start();
         let totalPages = 1;
         let currentPlanId = null;
         let dietasCatalogo = []; 
-        let currentDietasIds = []; 
+        let currentDietasIds = [];
 
         // Diccionario visual para los ENUMs del objetivo
         const enumObjectiveMap = {
@@ -192,7 +192,6 @@ ob_start();
             
             loader.classList.remove('hidden');
             tableCont.classList.add('hidden');
-            
             try {
                 const res = await fetch(`ajax_planes_v2.php?action=list&page=${page}&limit=50&search=${encodeURIComponent(searchVal)}`);
                 const json = await res.json();
@@ -227,7 +226,7 @@ ob_start();
                             
                             const cicladoBadge = item.caloric_cycling_active == 1 
                                 ? `<i class="ph-fill ph-arrows-clockwise text-purple-500 ml-1" title="Ciclado Calórico Activo"></i>` : '';
-
+                                
                             const dietasArr = item.dietas_compatibles ? item.dietas_compatibles.split(',').map(d => d.trim()) : [];
                             let dietasHtml = '';
                             if (dietasArr.length > 0) {
@@ -248,6 +247,7 @@ ob_start();
                                         </div>
                                         <p class="text-[10px] text-gray-500 font-mono uppercase">${item.key_name}</p>
                                     </td>
+                                    
                                     <td class="py-3 px-4 max-w-[200px]">
                                         <div class="flex flex-wrap mb-1">${dietasHtml}</div>
                                         <p class="text-[11px] text-gray-500 line-clamp-1 border-t border-gray-100 dark:border-gray-700 pt-1 mt-1">${objetivoLabel}</p>
@@ -303,9 +303,9 @@ ob_start();
                         const item = json.data.data;
                         document.getElementById('inp_key_name').value = item.key_name || '';
                         document.getElementById('inp_objective').value = item.objective || '';
-                        document.getElementById('inp_difficulty_level').value = item.difficulty_level || 'Principiante';
+                        // KR-FIX: Ahora seteamos a "Novato" como el ENUM real para que no de error Truncado
+                        document.getElementById('inp_difficulty_level').value = item.difficulty_level || 'Novato';
                         document.getElementById('inp_is_active').checked = (item.is_active == 1);
-                        
                         document.getElementById('inp_duration_days').value = item.duration_days || 7;
                         document.getElementById('inp_meals_per_day').value = item.meals_per_day || 3;
                         document.getElementById('inp_recommended_fasting_hours').value = item.recommended_fasting_hours || 0;
@@ -342,6 +342,7 @@ ob_start();
 
         async function savePlan(event) {
             event.preventDefault();
+            
             const keyName = document.getElementById('inp_key_name').value.trim();
             if(!keyName) {
                 switchTab('general');
@@ -365,7 +366,7 @@ ob_start();
             const btn = document.getElementById('btnSave');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
-
+            
             // Función ultra-segura para capturar números evitando que "0" se evalúe como falsy
             const getFloat = (id, def) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? def : v; };
             const getInt = (id, def) => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? def : v; };
@@ -378,19 +379,19 @@ ob_start();
                 objective_phase_days: getInt('inp_objective_phase_days', 0),
                 rest_phase_days: getInt('inp_rest_phase_days', 0),
                 rest_caloric_adjustment_perc: getFloat('inp_rest_caloric_adjustment_perc', 0),
+                // KR-FIX: Esto mandará Novato, Intermedio o Avanzado correctamente
                 difficulty_level: document.getElementById('inp_difficulty_level').value,
                 duration_days: getInt('inp_duration_days', 28),
                 meals_per_day: getInt('inp_meals_per_day', 4),
                 recommended_fasting_hours: getInt('inp_recommended_fasting_hours', 12),
                 is_active: document.getElementById('inp_is_active').checked ? 1 : 0,
-                // KR-FIX: Dejamos el string intacto (vacío si no hay nada), NO enviamos 'null'
                 display_name_es: document.getElementById('inp_display_name_es').value.trim(),
                 description_es: document.getElementById('inp_description_es').value.trim(),
                 display_name_en: document.getElementById('inp_display_name_en').value.trim(),
                 description_en: document.getElementById('inp_description_en').value.trim(),
                 dietas: currentDietasIds
             };
-
+            
             const endpoint = currentPlanId ? `ajax_planes_v2.php?action=update&id=${currentPlanId}` : `ajax_planes_v2.php?action=create`;
             
             try {
@@ -399,6 +400,7 @@ ob_start();
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
+                
                 const json = await res.json();
 
                 if(json.success || json.http_code === 201 || json.http_code === 200) {
@@ -433,7 +435,7 @@ ob_start();
             const btn = document.getElementById('btnConfirmDelete');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Eliminando...';
             btn.disabled = true;
-
+            
             try {
                 const res = await fetch(`ajax_planes_v2.php?action=delete&id=${deleteId}`, { method: 'DELETE' });
                 const json = await res.json();
@@ -601,7 +603,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <div>
                                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Dificultad</label>
                                     <select id="inp_difficulty_level" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white font-bold">
-                                        <option value="Principiante">Principiante</option>
+                                        <option value="Novato">Novato</option>
                                         <option value="Intermedio">Intermedio</option>
                                         <option value="Avanzado">Avanzado</option>
                                     </select>
