@@ -2,8 +2,8 @@
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-25
-// Versión: 1.4
-// Descripción: Se integraron los campos de measurement_unit (g/ml) y las 8 banderas de alérgenos/restricciones dietéticas en la interfaz, con una nueva pestaña dedicada a Alérgenos.
+// Versión: 1.5
+// Descripción: Se reubicó el campo booleano 'es_lacteo' a la pestaña de Alérgenos. Además, se actualizó la lógica de la tabla para que este campo dispare la alerta visual de restricción dietética.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -119,8 +119,9 @@ ob_start();
                             const certBadge = item.certificado_caloritrack
                                 ? `<i class="ph-fill ph-seal-check text-calori-500 text-lg ml-1" title="Certificado CaloriTrack"></i>` : '';
 
-                            // Evaluamos si tiene algún alérgeno activado
-                            const hasAllergens = item.contains_gluten || item.contains_egg || item.contains_tree_nut || item.contains_peanut || item.contains_soy || item.contains_shellfish || item.contains_fish || item.is_pork;
+                            // KR-FIX: Agregamos item.es_lacteo para que dispare el badge de alérgenos
+                            const hasAllergens = item.contains_gluten || item.contains_egg || item.contains_tree_nut || item.contains_peanut || item.contains_soy || item.contains_shellfish || item.contains_fish || item.is_pork || item.es_lacteo;
+                            
                             const alergenosBadge = hasAllergens 
                                 ? `<i class="ph-fill ph-warning-circle text-orange-500 text-lg ml-1" title="Contiene alérgenos o restricciones (Revisar Ficha)"></i>` : '';
 
@@ -135,7 +136,7 @@ ob_start();
                             const imgHtml = imgSrc 
                                 ? `<img src="${imgSrc}" alt="IMG" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\\'ph ph-image-broken text-gray-400 text-2xl\\\'></i>';">` 
                                 : `<i class="ph ph-image text-gray-400 text-2xl"></i>`;
-                                
+
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                                     <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">${item.id_alimento}</td>
@@ -501,7 +502,7 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div class="mb-4">
-                 <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Registros Globales: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Registros Globales: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
             </div>
 
             <div id="tableLoader" class="flex-1 flex flex-col items-center justify-center">
@@ -597,7 +598,7 @@ require_once __DIR__ . '/includes/header.php';
                                         Guardar
                                     </button>
                                 </div>
-                             </form>
+                            </form>
                         </div>
 
                         <div id="tablaEquivContainer" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 hidden bg-white dark:bg-darkbase-800 shadow-sm">
@@ -711,8 +712,7 @@ require_once __DIR__ . '/includes/header.php';
                             </div>
                         </div>
 
-                        <div class="grid grid-cols-3 gap-4 p-4 bg-white dark:bg-darkbase-800 rounded-xl border border-gray-200 dark:border-gray-700">
-                            <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_es_lacteo" class="w-4 h-4 rounded text-blue-500"><span class="text-sm font-medium dark:text-white">Es Lácteo</span></label>
+                        <div class="grid grid-cols-2 gap-4 p-4 bg-white dark:bg-darkbase-800 rounded-xl border border-gray-200 dark:border-gray-700">
                             <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_es_procesado" class="w-4 h-4 rounded text-orange-500"><span class="text-sm font-medium dark:text-white">Procesado</span></label>
                             <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_es_ultraprocesado" class="w-4 h-4 rounded text-red-500"><span class="text-sm font-medium dark:text-white text-red-600 dark:text-red-400 font-bold">Ultraprocesado</span></label>
                         </div>
@@ -779,6 +779,7 @@ require_once __DIR__ . '/includes/header.php';
                             <h4 class="font-bold text-orange-700 dark:text-orange-400 mb-4 border-b border-orange-200 dark:border-orange-800/50 pb-2"><i class="ph-fill ph-warning-circle mr-1"></i> Marcadores de Alergias y Dietas</h4>
                             <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
                                 <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_gluten" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Gluten</span></label>
+                                <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_es_lacteo" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Lácteos</span></label>
                                 <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_egg" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Contiene Huevo</span></label>
                                 <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_tree_nut" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Frutos Secos</span></label>
                                 <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="inp_contains_peanut" class="w-5 h-5 text-orange-600 rounded"><span class="text-sm font-medium dark:text-white">Cacahuate</span></label>

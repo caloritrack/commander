@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/sidebar.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-24
-// Versión: 1.15
-// Descripción: Panel lateral actualizado. Se integró la ruta hacia el nuevo Catálogo de Planes Alimenticios.
+// Fecha: 2026-05-25
+// Versión: 1.16
+// Descripción: Panel lateral actualizado. Se integró la ruta hacia el nuevo Catálogo de Planes V2 (Algorítmicos) sin afectar los sistemas de la V1.
 
 // Detectamos la página actual para marcar la navegación activa
 $current_page = basename($_SERVER['PHP_SELF']);
@@ -65,7 +65,8 @@ $current_page = basename($_SERVER['PHP_SELF']);
                     <a href="platillos_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'platillos_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo de Platillos</a>
                     <a href="dietas_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'dietas_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Catálogo de Dietas</a>
                     
-                    <a href="planes_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'planes_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Planes Alimenticios</a>
+                    <a href="planes_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'planes_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Planes Alimenticios (V1)</a>
+                    <a href="planes_v2_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'planes_v2_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-purple-600 hover:text-calori-600'; ?>"><i class="ph-fill ph-rocket-launch mr-1"></i>Planes V2 (Nuevos)</a>
                     
                     <a href="unidades_catalog.php" class="block py-2 text-sm transition-colors <?php echo ($current_page == 'unidades_catalog.php') ? 'text-calori-600 dark:text-calori-500 font-semibold' : 'text-gray-500 hover:text-calori-600'; ?>">Unidades de Medida</a>
                 </div>
