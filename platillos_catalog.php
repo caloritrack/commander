@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: platillos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.6
-// Descripción: Interfaz gráfica (CRUD) para el Catálogo de Platillos. Se implementó un algoritmo asíncrono de "calculadora inversa" para que, al cargar ingredientes guardados en la BD (gramos puros), busque sus equivalencias y muestre la cantidad en piezas/tazas (ej. "5.33 Piezas") en lugar de "Calculado en DB".
+// Fecha: 2026-05-27
+// Versión: 1.10
+// Descripción: Se corrigieron las funciones de resolución de imágenes para que apunten al nuevo bucket de Cloudflare R2 (images.caloritrack.com) en lugar de la ruta local heredada de la API. Soporta cualquier extensión (WebP, JPG, PNG).
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -79,41 +79,39 @@ ob_start();
             btn.classList.add('text-calori-600', 'border-calori-600', 'dark:text-calori-400', 'dark:border-calori-400');
         }
 
-        // Resolución de la URL de Platillos
+        // --- RESOLUCIÓN INTELIGENTE DE IMÁGENES (Soporta Legacy y Cloudflare R2) ---
         function resolvePlatilloImageUrl(rawUrl) {
             if (!rawUrl || rawUrl.trim() === '') return '';
             rawUrl = rawUrl.trim();
             if (rawUrl.startsWith('http')) return rawUrl;
-            
-            if (rawUrl.startsWith('/')) {
-                rawUrl = rawUrl.substring(1);
-            }
+            if (rawUrl.startsWith('/')) rawUrl = rawUrl.substring(1);
             
             if (rawUrl.includes('foodimages/platillos/')) {
                 return 'https://api.caloritrack.com/' + rawUrl;
-            } else if (rawUrl.includes('foodimages/')) {
-                return 'https://api.caloritrack.com/' + rawUrl;
+            }
+            
+            if (rawUrl.includes('platillos/')) {
+                return 'https://images.caloritrack.com/' + rawUrl;
             } else {
-                return 'https://api.caloritrack.com/foodimages/platillos/' + rawUrl;
+                return 'https://images.caloritrack.com/platillos/' + rawUrl;
             }
         }
 
-        // Resolución de la URL de Alimentos (Ingredientes)
+        // Resolución de la URL de Alimentos (Para la tabla de ingredientes)
         function resolveAlimentoImageUrl(rawUrl) {
             if (!rawUrl || rawUrl.trim() === '') return '';
             rawUrl = rawUrl.trim();
             if (rawUrl.startsWith('http')) return rawUrl;
-            
-            if (rawUrl.startsWith('/')) {
-                rawUrl = rawUrl.substring(1);
-            }
+            if (rawUrl.startsWith('/')) rawUrl = rawUrl.substring(1);
             
             if (rawUrl.includes('foodimages/food/')) {
                 return 'https://api.caloritrack.com/' + rawUrl;
-            } else if (rawUrl.includes('foodimages/')) {
-                return 'https://api.caloritrack.com/' + rawUrl;
+            }
+            
+            if (rawUrl.includes('food/')) {
+                return 'https://images.caloritrack.com/' + rawUrl;
             } else {
-                return 'https://api.caloritrack.com/foodimages/food/' + rawUrl;
+                return 'https://images.caloritrack.com/food/' + rawUrl;
             }
         }
 
@@ -140,6 +138,79 @@ ob_start();
                         <span class="text-xs font-medium">Sin imagen asignada</span>
                     </div>
                 `;
+            }
+        }
+
+        // === COMPRESIÓN DE IMÁGENES AL VUELO ===
+        async function compressAndUploadImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const originalSize = file.size;
+            const statsDiv = document.getElementById('compressionStats');
+            const uploadBtn = document.getElementById('btnUploadImage');
+            const originalBtnHtml = uploadBtn.innerHTML;
+            
+            uploadBtn.innerHTML = '<i class="ph ph-spinner animate-spin mr-1"></i> Procesando...';
+            uploadBtn.disabled = true;
+            statsDiv.classList.add('hidden');
+
+            try {
+                const img = new Image();
+                img.src = URL.createObjectURL(file);
+                await new Promise(res => img.onload = res);
+
+                const MAX_WIDTH = 800;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > MAX_WIDTH) {
+                    height = Math.floor(height * (MAX_WIDTH / width));
+                    width = MAX_WIDTH;
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/webp', 0.8));
+                const compressedSize = blob.size;
+
+                const formatBytes = (bytes) => (bytes / 1024).toFixed(1) + ' KB';
+                const originalMB = (originalSize / (1024*1024)).toFixed(2) + ' MB';
+                const compressedKB = formatBytes(compressedSize);
+                const savings = Math.round((1 - (compressedSize / originalSize)) * 100);
+
+                document.getElementById('compOriginal').innerText = originalSize > 1024*1024 ? originalMB : formatBytes(originalSize);
+                document.getElementById('compNueva').innerText = compressedKB;
+                document.getElementById('compAhorro').innerText = savings + '%';
+                statsDiv.classList.remove('hidden');
+
+                const formData = new FormData();
+                const safeName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                formData.append('image', blob, safeName + ".webp");
+                formData.append('folder', 'platillos');
+                
+                const response = await fetch('ajax_upload.php', { method: 'POST', body: formData });
+                const json = await response.json();
+
+                if (json.success && json.data && json.data.url) {
+                    document.getElementById('inp_url_imagen').value = json.data.url;
+                    updateLivePreview();
+                    showToast("Imagen subida y optimizada mágicamente.", "success");
+                } else {
+                    showToast("Error al subir a la nube: " + (json.message || "No se recibió respuesta válida de Hermes"), "error");
+                }
+
+            } catch (err) {
+                console.error(err);
+                showToast("Error procesando la compresión de la imagen.", "error");
+            } finally {
+                uploadBtn.innerHTML = originalBtnHtml;
+                uploadBtn.disabled = false;
+                event.target.value = ''; 
             }
         }
 
@@ -240,6 +311,13 @@ ob_start();
                 : '<i class="ph-fill ph-cooking-pot text-calori-500 mr-2"></i> Nuevo Platillo';
             
             document.getElementById('formPlatillo').reset();
+            document.getElementById('compressionStats').classList.add('hidden');
+            document.getElementById('liveImagePreviewContainer').innerHTML = `
+                <div class="flex flex-col items-center justify-center p-6 text-center text-gray-400 dark:text-gray-500">
+                    <i class="ph ph-cooking-pot text-5xl mb-2 opacity-40 animate-pulse"></i>
+                    <span class="text-xs font-medium">Sin imagen asignada</span>
+                </div>
+            `;
             
             document.getElementById('ingrSelectFood').innerHTML = '<option value="">Primero busca un alimento...</option>';
             document.getElementById('ingrSelectUnidad').innerHTML = '<option value="1" data-name="g">Gramos (g)</option>';
@@ -268,14 +346,12 @@ ob_start();
                                 id_alimento: ing.id_alimento,
                                 nombre_alimento: ing.nombre_alimento || 'Alimento #' + ing.id_alimento,
                                 cantidad_gramos: ing.cantidad_gramos,
-                                equivalenciaText: '<i class="ph ph-spinner animate-spin text-calori-500"></i>', // Loader inicial
-                                url_imagen: '' // Lo llenaremos asincrónicamente
+                                equivalenciaText: '<i class="ph ph-spinner animate-spin text-calori-500"></i>',
+                                url_imagen: ''
                             }));
                             renderIngredientsTable();
                             
-                            // Carga asíncrona mágica de imágenes y equivalencias
                             currentIngredients.forEach((ing, idx) => {
-                                // 1. Traer la imagen
                                 fetch(`ajax_alimentos.php?action=get&id=${ing.id_alimento}`)
                                     .then(r => r.json())
                                     .then(j => {
@@ -285,36 +361,30 @@ ob_start();
                                         }
                                     }).catch(e => console.log('Silencioso: No se pudo cargar img alimento.'));
 
-                                // 2. Traer equivalencias y calcular la unidad óptima para no mostrar "Calculado en DB"
                                 fetch(`ajax_equivalencias.php?action=list&id_alimento=${ing.id_alimento}`)
                                     .then(r => r.json())
                                     .then(j => {
                                         if (j.success && j.data && j.data.length > 0) {
-                                            let bestEq = j.data[0]; // Por defecto la primera
+                                            let bestEq = j.data[0];
                                             
-                                            // Buscamos si alguna equivalencia divide exactamente los gramos
                                             for(let i = 0; i < j.data.length; i++) {
                                                 let eq = j.data[i];
                                                 let division = ing.cantidad_gramos / eq.gramos_equivalentes;
-                                                // Si el número es entero o muy cercano (ej 5.0001)
                                                 if (Math.abs(division - Math.round(division)) < 0.05) {
                                                     bestEq = eq;
                                                     break;
                                                 }
                                             }
 
-                                            // Calculamos cantidad
                                             let qty = +(ing.cantidad_gramos / bestEq.gramos_equivalentes).toFixed(2);
                                             let unitName = bestEq.nombre_clave.charAt(0).toUpperCase() + bestEq.nombre_clave.slice(1);
                                             
-                                            // Pluralización inteligente básica (Pieza -> Piezas)
                                             if (qty > 1 && !unitName.endsWith('s')) {
                                                 unitName += 's';
                                             }
 
                                             currentIngredients[idx].equivalenciaText = `<span class="text-green-600 dark:text-green-400 font-medium">${qty} ${unitName}</span>`;
                                         } else {
-                                            // Si no hay equivalencias en BD, mostramos los gramos nativos
                                             currentIngredients[idx].equivalenciaText = `<span class="text-gray-500">${ing.cantidad_gramos} Gramos</span>`;
                                         }
                                         renderIngredientsTable();
@@ -419,7 +489,6 @@ ob_start();
                 if(json.success && json.data && json.data.data.length > 0) {
                     resultsSel.innerHTML = '<option value="">Selecciona un alimento...</option>';
                     json.data.data.forEach(food => {
-                        // Guardamos la url de la imagen en data-img para leerla al agregar
                         resultsSel.innerHTML += `<option value="${food.id_alimento}" data-img="${food.url_imagen || ''}">${food.nombre_es || food.nombre_clave} (ID: ${food.id_alimento})</option>`;
                     });
                 } else {
@@ -477,12 +546,11 @@ ob_start();
             const unitNameRaw = unitSel.options[unitSel.selectedIndex].getAttribute('data-name');
             const totalGramos = parseFloat((cantidad * factorGramos).toFixed(2));
 
-            // Formateo de la equivalencia para la columna nueva
             let equivVisual = '';
             if (factorGramos !== 1) {
                 let unitName = unitNameRaw.charAt(0).toUpperCase() + unitNameRaw.slice(1);
                 if (cantidad > 1 && !unitName.endsWith('s')) {
-                    unitName += 's'; // Agrega plural automáticamente
+                    unitName += 's'; 
                 }
                 equivVisual = `<span class="text-green-600 dark:text-green-400 font-medium">${cantidad} ${unitName}</span>`;
             } else {
@@ -492,7 +560,7 @@ ob_start();
             const exists = currentIngredients.findIndex(ing => ing.id_alimento == idAlimento);
             if(exists >= 0) {
                 currentIngredients[exists].cantidad_gramos = parseFloat((currentIngredients[exists].cantidad_gramos + totalGramos).toFixed(2));
-                currentIngredients[exists].equivalenciaText = `<span class="text-blue-500 font-bold">Sumado en DB</span>`; // Si suma peras y manzanas
+                currentIngredients[exists].equivalenciaText = `<span class="text-blue-500 font-bold">Sumado en DB</span>`;
                 showToast("El ingrediente ya existía, se han sumado los gramos.", "success");
             } else {
                 currentIngredients.push({
@@ -734,9 +802,22 @@ require_once __DIR__ . '/includes/header.php';
                                     <h4 class="font-bold text-gray-900 dark:text-white mb-4 border-b border-gray-100 dark:border-gray-700 pb-2">Multimedia</h4>
                                     <div class="space-y-4">
                                         <div>
-                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Imagen o Nombre del Archivo</label>
-                                            <input type="text" id="inp_url_imagen" oninput="updateLivePreview()" placeholder="ej. Chistorra-a-la-Mexicana.png" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none dark:text-white font-mono focus:ring-2 focus:ring-calori-500">
-                                            <p class="text-[10px] text-gray-400 mt-1">El sistema auto-completará el path si solo ingresas el nombre. Base: <span class="font-bold text-gray-500">https://api.caloritrack.com/foodimages/platillos/</span></p>
+                                            <label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Imagen o Subir Archivo</label>
+                                            <div class="flex gap-2">
+                                                <input type="text" id="inp_url_imagen" oninput="updateLivePreview()" placeholder="ej. Chistorra-a-la-Mexicana.png" class="flex-1 w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none dark:text-white font-mono focus:ring-2 focus:ring-calori-500 transition-all">
+                                                
+                                                <button type="button" id="btnUploadImage" onclick="document.getElementById('fileUploadInput').click()" class="px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-sm font-bold transition-colors border border-blue-200 dark:border-blue-800 flex items-center shrink-0">
+                                                    <i class="ph ph-upload-simple mr-1 text-lg"></i> Subir
+                                                </button>
+                                                <input type="file" id="fileUploadInput" accept="image/*" class="hidden" onchange="compressAndUploadImage(event)">
+                                            </div>
+                                            
+                                            <div id="compressionStats" class="hidden mt-2 p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between text-xs text-green-700 dark:text-green-400 transition-all">
+                                                <span class="flex items-center"><i class="ph ph-arrows-in mr-1.5 text-lg"></i> Original: <span id="compOriginal" class="mx-1 font-mono"></span> ➔ Nueva: <span id="compNueva" class="ml-1 font-bold font-mono"></span></span>
+                                                <span class="font-black bg-green-200 dark:bg-green-800/50 px-2 py-0.5 rounded uppercase tracking-wider text-green-800 dark:text-green-300">Ahorro: <span id="compAhorro"></span></span>
+                                            </div>
+                                            
+                                            <p class="text-[10px] text-gray-400 mt-1">El sistema auto-completará el path. Base CDN: <span class="font-bold text-gray-500">https://images.caloritrack.com/platillos/</span></p>
                                         </div>
                                         <div>
                                             <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Alt Text Imagen (Accesibilidad)</label>

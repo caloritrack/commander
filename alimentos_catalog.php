@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-25
-// Versión: 1.5
-// Descripción: Se reubicó el campo booleano 'es_lacteo' a la pestaña de Alérgenos. Además, se actualizó la lógica de la tabla para que este campo dispare la alerta visual de restricción dietética.
+// Fecha: 2026-05-27
+// Versión: 1.8
+// Descripción: Se corrigieron las funciones de resolución de imágenes para que apunten al nuevo bucket de Cloudflare R2 (images.caloritrack.com) en lugar de la ruta local heredada de la API. Soporta cualquier extensión (WebP, JPG, PNG).
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -81,6 +81,107 @@ ob_start();
             btn.classList.add('text-calori-600', 'border-calori-600', 'dark:text-calori-400', 'dark:border-calori-400');
         }
 
+        // --- RESOLUCIÓN INTELIGENTE DE IMÁGENES (Soporta Legacy y Cloudflare R2) ---
+        function resolveAlimentoImageUrl(rawUrl) {
+            if (!rawUrl || rawUrl.trim() === '') return '';
+            rawUrl = rawUrl.trim();
+            
+            // Si ya es una URL completa, la respetamos
+            if (rawUrl.startsWith('http')) return rawUrl;
+            
+            // Limpiamos slash inicial si lo trae
+            if (rawUrl.startsWith('/')) rawUrl = rawUrl.substring(1);
+
+            // Soporte Legacy (Imágenes viejas que se quedaron en el VPS de Hermes)
+            if (rawUrl.includes('foodimages/food/')) {
+                return 'https://api.caloritrack.com/' + rawUrl;
+            }
+
+            // Nueva Infraestructura Cloudflare R2
+            if (rawUrl.includes('food/')) {
+                return 'https://images.caloritrack.com/' + rawUrl;
+            } else {
+                return 'https://images.caloritrack.com/food/' + rawUrl;
+            }
+        }
+
+        function updateLivePreview() {
+            // Lógica compartida por si se decide agregar vista en vivo como en platillos
+            const inputVal = document.getElementById('inp_url_imagen').value;
+        }
+
+        // === COMPRESIÓN DE IMÁGENES AL VUELO ===
+        async function compressAndUploadImage(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const originalSize = file.size;
+            const statsDiv = document.getElementById('compressionStats');
+            const uploadBtn = document.getElementById('btnUploadImage');
+            const originalBtnHtml = uploadBtn.innerHTML;
+            
+            uploadBtn.innerHTML = '<i class="ph ph-spinner animate-spin mr-1"></i> Procesando...';
+            uploadBtn.disabled = true;
+            statsDiv.classList.add('hidden');
+
+            try {
+                const img = new Image();
+                img.src = URL.createObjectURL(file);
+                await new Promise(res => img.onload = res);
+
+                const MAX_WIDTH = 800;
+                let width = img.width;
+                let height = img.height;
+
+                if (width > MAX_WIDTH) {
+                    height = Math.floor(height * (MAX_WIDTH / width));
+                    width = MAX_WIDTH;
+                }
+
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, width, height);
+
+                const blob = await new Promise(res => canvas.toBlob(res, 'image/webp', 0.8));
+                const compressedSize = blob.size;
+
+                const formatBytes = (bytes) => (bytes / 1024).toFixed(1) + ' KB';
+                const originalMB = (originalSize / (1024*1024)).toFixed(2) + ' MB';
+                const compressedKB = formatBytes(compressedSize);
+                const savings = Math.round((1 - (compressedSize / originalSize)) * 100);
+
+                document.getElementById('compOriginal').innerText = originalSize > 1024*1024 ? originalMB : formatBytes(originalSize);
+                document.getElementById('compNueva').innerText = compressedKB;
+                document.getElementById('compAhorro').innerText = savings + '%';
+                statsDiv.classList.remove('hidden');
+
+                const formData = new FormData();
+                const safeName = file.name.replace(/\.[^/.]+$/, "").replace(/[^a-z0-9]/gi, '_').toLowerCase();
+                formData.append('image', blob, safeName + ".webp");
+                formData.append('folder', 'food');
+                
+                const response = await fetch('ajax_upload.php', { method: 'POST', body: formData });
+                const json = await response.json();
+
+                if (json.success && json.data && json.data.url) {
+                    document.getElementById('inp_url_imagen').value = json.data.url;
+                    showToast("Imagen optimizada y enviada correctamente.", "success");
+                } else {
+                    showToast("Error al subir a la nube: " + (json.message || "No se recibió respuesta válida de Hermes"), "error");
+                }
+
+            } catch (err) {
+                console.error(err);
+                showToast("Error procesando la compresión de la imagen.", "error");
+            } finally {
+                uploadBtn.innerHTML = originalBtnHtml;
+                uploadBtn.disabled = false;
+                event.target.value = ''; 
+            }
+        }
+
         // --- Carga de Tabla (Lectura Indexada) ---
         async function loadAlimentos(page = 1) {
             const tbody = document.getElementById('alimentosTableBody');
@@ -119,19 +220,15 @@ ob_start();
                             const certBadge = item.certificado_caloritrack
                                 ? `<i class="ph-fill ph-seal-check text-calori-500 text-lg ml-1" title="Certificado CaloriTrack"></i>` : '';
 
-                            // KR-FIX: Agregamos item.es_lacteo para que dispare el badge de alérgenos
                             const hasAllergens = item.contains_gluten || item.contains_egg || item.contains_tree_nut || item.contains_peanut || item.contains_soy || item.contains_shellfish || item.contains_fish || item.is_pork || item.es_lacteo;
                             
                             const alergenosBadge = hasAllergens 
                                 ? `<i class="ph-fill ph-warning-circle text-orange-500 text-lg ml-1" title="Contiene alérgenos o restricciones (Revisar Ficha)"></i>` : '';
 
-                            // Evaluamos unidad base (por defecto gramos)
                             const baseUnit = item.measurement_unit || 'g';
 
-                            let imgSrc = '';
-                            if (item.url_imagen && item.url_imagen.trim() !== '') {
-                                imgSrc = item.url_imagen.startsWith('http') ? item.url_imagen : 'https://api.caloritrack.com/foodimages/food/' + item.url_imagen;
-                            }
+                            // Usamos el resolver optimizado
+                            const imgSrc = resolveAlimentoImageUrl(item.url_imagen);
                             
                             const imgHtml = imgSrc 
                                 ? `<img src="${imgSrc}" alt="IMG" class="w-full h-full object-cover" onerror="this.onerror=null; this.parentElement.innerHTML='<i class=\\\'ph ph-image-broken text-gray-400 text-2xl\\\'></i>';">` 
@@ -188,9 +285,9 @@ ob_start();
             document.getElementById('formModal').classList.remove('hidden');
             document.getElementById('formTitle').innerText = id ? 'Editar Alimento' : 'Nuevo Alimento Maestro';
             document.getElementById('formAlimento').reset();
-            switchTab('general'); // Regresa a la pestaña principal por defecto
+            document.getElementById('compressionStats').classList.add('hidden');
+            switchTab('general'); 
             
-            // Lógica UX de la pestaña Equivalencias
             if (id) {
                 document.getElementById('msgEquivNew').classList.add('hidden');
                 document.getElementById('btnShowAddEquiv').classList.remove('hidden');
@@ -275,7 +372,7 @@ ob_start();
         //  LÓGICA DE GESTIÓN DE EQUIVALENCIAS
         // ==========================================
         async function loadUnidadesForSelect() {
-            if (cacheUnidades.length > 0) return; // Si ya lo cargamos, lo reusamos (Performance)
+            if (cacheUnidades.length > 0) return;
             try {
                 const res = await fetch('ajax_unidades.php?action=list');
                 const json = await res.json();
@@ -333,7 +430,7 @@ ob_start();
         function showEquivForm() {
             currentEquivId = null;
             document.getElementById('formEquivalencia').reset();
-            document.getElementById('sel_unidad_equiv').disabled = false; // Se puede seleccionar unidad porque es nuevo
+            document.getElementById('sel_unidad_equiv').disabled = false;
             document.getElementById('formEquivalenciaContainer').classList.remove('hidden');
             document.getElementById('btnShowAddEquiv').classList.add('hidden');
         }
@@ -341,7 +438,7 @@ ob_start();
         function editEquivalencia(idEquiv, idUnidad, gramos) {
             currentEquivId = idEquiv;
             document.getElementById('sel_unidad_equiv').value = idUnidad;
-            document.getElementById('sel_unidad_equiv').disabled = true; // Hermes dicta que no se cambia el ID en PUT
+            document.getElementById('sel_unidad_equiv').disabled = true;
             document.getElementById('inp_gramos_equiv').value = gramos;
             document.getElementById('formEquivalenciaContainer').classList.remove('hidden');
             document.getElementById('btnShowAddEquiv').classList.add('hidden');
@@ -362,8 +459,8 @@ ob_start();
             const gramos = document.getElementById('inp_gramos_equiv').value;
 
             const payload = currentEquivId 
-                ? { gramos_equivalentes: parseFloat(gramos) } // Si edita, solo mandamos los gramos
-                : { id_unidad: parseInt(idUnidad), gramos_equivalentes: parseFloat(gramos) }; // Si es nuevo, mandamos unidad y gramos
+                ? { gramos_equivalentes: parseFloat(gramos) }
+                : { id_unidad: parseInt(idUnidad), gramos_equivalentes: parseFloat(gramos) };
 
             const endpoint = currentEquivId 
                 ? `ajax_equivalencias.php?action=update&id_alimento=${currentAlimentoId}&id_equivalencia=${currentEquivId}` 
@@ -379,7 +476,7 @@ ob_start();
 
                 if (json.success || json.http_code === 201 || json.http_code === 200) {
                     showToast(currentEquivId ? "Equivalencia actualizada." : "Equivalencia guardada.", "success");
-                    loadEquivalencias(currentAlimentoId); // Recargamos sub-tabla
+                    loadEquivalencias(currentAlimentoId);
                 } else if (json.http_code === 409) {
                     showToast("Atención: Esa unidad ya está asignada a este alimento.", "warning");
                 } else {
@@ -409,8 +506,6 @@ ob_start();
                 showToast("Error de red.", "error");
             }
         }
-        // ==========================================
-
 
         // --- Eliminar Alimento (Protección Relacional) ---
         let deleteId = null;
@@ -603,7 +698,7 @@ require_once __DIR__ . '/includes/header.php';
 
                         <div id="tablaEquivContainer" class="overflow-hidden rounded-xl border border-gray-200 dark:border-gray-700 hidden bg-white dark:bg-darkbase-800 shadow-sm">
                             <table class="w-full text-left">
-                                <thead class="bg-gray-50 dark:bg-gray-800/80 border-b border-gray-200 dark:border-gray-700">
+                                <thead class="bg-gray-50 dark:bg-darkbase-800/80 border-b border-gray-200 dark:border-gray-700">
                                     <tr>
                                         <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Unidad Maestro</th>
                                         <th class="py-3 px-4 text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Símbolo</th>
@@ -651,8 +746,22 @@ require_once __DIR__ . '/includes/header.php';
 
                         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Imagen (CDN) / Ruta</label>
-                                <input type="text" id="inp_url_imagen" placeholder="URL o ruta de la imagen..." class="w-full bg-white dark:bg-darkbase-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none dark:text-white">
+                                <label class="block text-xs font-bold text-gray-500 uppercase mb-1">URL Imagen o Subir Archivo</label>
+                                <div class="flex gap-2">
+                                    <input type="text" id="inp_url_imagen" placeholder="URL o ruta de la imagen..." class="flex-1 w-full bg-white dark:bg-darkbase-800 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm outline-none dark:text-white font-mono focus:ring-2 focus:ring-calori-500 transition-all">
+                                    
+                                    <button type="button" id="btnUploadImage" onclick="document.getElementById('fileUploadInput').click()" class="px-4 py-2 bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-900/50 rounded-lg text-sm font-bold transition-colors border border-blue-200 dark:border-blue-800 flex items-center shrink-0">
+                                        <i class="ph ph-upload-simple mr-1 text-lg"></i> Subir
+                                    </button>
+                                    <input type="file" id="fileUploadInput" accept="image/*" class="hidden" onchange="compressAndUploadImage(event)">
+                                </div>
+                                
+                                <div id="compressionStats" class="hidden mt-2 p-2.5 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg flex items-center justify-between text-xs text-green-700 dark:text-green-400 transition-all">
+                                    <span class="flex items-center"><i class="ph ph-arrows-in mr-1.5 text-lg"></i> Original: <span id="compOriginal" class="mx-1 font-mono"></span> ➔ Nueva: <span id="compNueva" class="ml-1 font-bold font-mono"></span></span>
+                                    <span class="font-black bg-green-200 dark:bg-green-800/50 px-2 py-0.5 rounded uppercase tracking-wider text-green-800 dark:text-green-300">Ahorro: <span id="compAhorro"></span></span>
+                                </div>
+                                
+                                <p class="text-[10px] text-gray-400 mt-1">El sistema auto-completará el path. Base CDN: <span class="font-bold text-gray-500">https://images.caloritrack.com/food/</span></p>
                             </div>
                             <div>
                                 <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Alt Text Imagen</label>

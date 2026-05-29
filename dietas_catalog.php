@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: dietas_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.5
-// Descripción: Interfaz gráfica (CRUD) para el Catálogo de Dietas. Se añadió un Catálogo Visual en Modal sobrepuesto para buscar, visualizar ingredientes/descripción y agregar platillos de forma múltiple (en lote) mejorando la UX.
+// Fecha: 2026-05-25
+// Versión: 1.6
+// Descripción: Interfaz gráfica (CRUD) para el Catálogo de Dietas. Se ajustó el payload de "platillos" para enviar un arreglo de enteros a Hermes y se hizo a prueba de balas la recepción de IDs.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -28,8 +28,8 @@ ob_start();
         let currentPage = 1;
         let totalPages = 1;
         let currentDietaId = null;
-        let currentPlatillos = []; 
-        
+        let currentPlatillos = [];
+
         // Variables para el Catálogo Visual
         let allVisualPlatillos = [];
         let visualSelectedPlatillos = [];
@@ -112,7 +112,6 @@ ob_start();
             
             loader.classList.remove('hidden');
             tableCont.classList.add('hidden');
-            
             try {
                 const res = await fetch(`ajax_dietas.php?action=list&page=${page}&limit=50&search=${encodeURIComponent(searchVal)}`);
                 const json = await res.json();
@@ -141,6 +140,7 @@ ob_start();
                                 ? `<span class="px-2 py-0.5 bg-green-100 text-green-700 text-[10px] font-bold rounded uppercase">Activa</span>`
                                 : `<span class="px-2 py-0.5 bg-red-100 text-red-700 text-[10px] font-bold rounded uppercase">Inactiva</span>`;
                                 
+                        
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
                                     <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">${item.id_dieta}</td>
@@ -190,7 +190,6 @@ ob_start();
             document.getElementById('formTitle').innerHTML = id 
                 ? '<i class="ph-fill ph-heartbeat text-calori-500 mr-2"></i> Editar Dieta' 
                 : '<i class="ph-fill ph-heartbeat text-calori-500 mr-2"></i> Nueva Dieta';
-            
             document.getElementById('formDieta').reset();
             document.getElementById('platilloSelectDropdown').innerHTML = '<option value="">Primero busca un platillo...</option>';
             
@@ -200,14 +199,12 @@ ob_start();
                         fetch(`ajax_dietas.php?action=get&id=${id}`),
                         fetch(`ajax_dietas.php?action=get_platillos&id=${id}`)
                     ]);
-
                     const jsonDieta = await resDieta.json();
                     const jsonPlatillos = await resPlatillos.json();
                     let item = {};
 
                     if(jsonDieta.success && jsonDieta.data && jsonDieta.data.data) {
                         item = jsonDieta.data.data;
-                        
                         document.getElementById('inp_nombre_clave').value = item.nombre_clave || '';
                         document.getElementById('inp_activa').checked = (item.activa == 1);
                         
@@ -238,11 +235,22 @@ ob_start();
                         arrPlatillos = item.platillos;
                     }
                     
-                    currentPlatillos = arrPlatillos.map(p => ({
-                        id_platillo: p.id_platillo,
-                        nombre: p.nombre_es || p.nombre_clave || 'Platillo #' + p.id_platillo,
-                        url_imagen: p.url_imagen || '' 
-                    }));
+                    currentPlatillos = arrPlatillos.map(p => {
+                        // KRILLIN FIX: A prueba de balas. Si la API regresa un arreglo de puros IDs [58, 61]
+                        if (typeof p === 'number' || typeof p === 'string') {
+                            return {
+                                id_platillo: parseInt(p),
+                                nombre: 'Platillo #' + p,
+                                url_imagen: ''
+                            };
+                        }
+                        // Si la API regresa un arreglo de objetos complejos
+                        return {
+                            id_platillo: p.id_platillo,
+                            nombre: p.nombre_es || p.nombre_clave || 'Platillo #' + p.id_platillo,
+                            url_imagen: p.url_imagen || '' 
+                        };
+                    });
 
                     renderPlatillosTable();
 
@@ -253,12 +261,15 @@ ob_start();
                                 .then(j => {
                                     if(j.success && j.data && j.data.data && j.data.data.url_imagen) {
                                         currentPlatillos[idx].url_imagen = j.data.data.url_imagen;
+                                        // Actualizamos también el nombre si era solo un ID
+                                        if (currentPlatillos[idx].nombre.startsWith('Platillo #')) {
+                                            currentPlatillos[idx].nombre = j.data.data.nombre_es || j.data.data.nombre_clave;
+                                        }
                                         renderPlatillosTable();
                                     }
                                 }).catch(e => console.log('Silencioso: No se pudo cargar img platillo.'));
                         }
                     });
-
                 } catch(e) {
                     console.error("Error abriendo modal:", e);
                     showToast("Error al cargar los datos de la dieta.", "error");
@@ -276,11 +287,10 @@ ob_start();
 
         async function saveDieta(event) {
             event.preventDefault();
-
+            
             const pStd = parseFloat(document.getElementById('inp_porc_proteinas_std').value) || 0;
             const gStd = parseFloat(document.getElementById('inp_porc_grasas_std').value) || 0;
             const cStd = parseFloat(document.getElementById('inp_porc_carbohidratos_std').value) || 0;
-            
             if(Math.abs((pStd + gStd + cStd) - 100) > 0.1) {
                 showToast("Atención: Los macros Estándar no suman 100%.", "warning");
             }
@@ -289,9 +299,8 @@ ob_start();
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
 
-            const platillosLimpio = currentPlatillos.map(p => ({
-                id_platillo: parseInt(p.id_platillo)
-            }));
+            // KRILLIN FIX: Extraemos SÓLO los IDs como arreglo plano de enteros para Hermes
+            const platillosLimpio = currentPlatillos.map(p => parseInt(p.id_platillo));
 
             const payload = {
                 nombre_clave: document.getElementById('inp_nombre_clave').value.trim(),
@@ -385,7 +394,7 @@ ob_start();
                 nombre: nombrePlatillo,
                 url_imagen: imgUrl
             });
-
+            
             document.getElementById('platilloSearchInput').value = '';
             document.getElementById('platilloSelectDropdown').innerHTML = '<option value="">Primero busca un platillo...</option>';
 
@@ -442,7 +451,6 @@ ob_start();
 
             const loader = document.getElementById('visualCatalogLoader');
             loader.classList.remove('hidden');
-
             try {
                 // Pedimos un listado amplio para que el usuario pueda explorar (hasta 200)
                 const res = await fetch(`ajax_platillos.php?action=list&limit=200`);
@@ -579,7 +587,6 @@ ob_start();
             const btn = document.getElementById('btnConfirmDelete');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Eliminando...';
             btn.disabled = true;
-
             try {
                 const res = await fetch(`ajax_dietas.php?action=delete&id=${deleteId}`, { method: 'DELETE' });
                 const json = await res.json();
