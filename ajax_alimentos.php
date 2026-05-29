@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Alimentos comunicándose con la API de Hermes.
+// Fecha: 2026-05-29
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Alimentos comunicándose con la API de Hermes. Se agregó soporte para reenviar el parámetro opcional es_publico a Hermes.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -44,11 +44,16 @@ if ($action === 'list' && $method === 'GET') {
     $page = $_GET['page'] ?? 1;
     $limit = $_GET['limit'] ?? 50;
     $search = urlencode($_GET['search'] ?? '');
+    $es_publico = $_GET['es_publico'] ?? '';
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
         $fetchUrl .= "&search={$search}";
     }
+    if ($es_publico !== '') {
+        $fetchUrl .= "&es_publico={$es_publico}";
+    }
+    
     curl_setopt($ch, CURLOPT_URL, $fetchUrl);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 

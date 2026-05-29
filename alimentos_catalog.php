@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-27
-// Versión: 1.8
-// Descripción: Se corrigieron las funciones de resolución de imágenes para que apunten al nuevo bucket de Cloudflare R2 (images.caloritrack.com) en lugar de la ruta local heredada de la API. Soporta cualquier extensión (WebP, JPG, PNG).
+// Fecha: 2026-05-29
+// Versión: 1.9
+// Descripción: Se modificó la petición de carga para filtrar únicamente los alimentos públicos (es_publico=1), manteniendo limpia la administración.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -182,7 +182,7 @@ ob_start();
             }
         }
 
-        // --- Carga de Tabla (Lectura Indexada) ---
+        // --- Carga de Tabla (Lectura Indexada filtrada a es_publico=1) ---
         async function loadAlimentos(page = 1) {
             const tbody = document.getElementById('alimentosTableBody');
             const loader = document.getElementById('tableLoader');
@@ -192,7 +192,8 @@ ob_start();
             loader.classList.remove('hidden');
             tableCont.classList.add('hidden');
             try {
-                const res = await fetch(`ajax_alimentos.php?action=list&page=${page}&limit=50&search=${encodeURIComponent(searchVal)}`);
+                // Filtramos por alimentos públicos
+                const res = await fetch(`ajax_alimentos.php?action=list&page=${page}&limit=50&es_publico=1&search=${encodeURIComponent(searchVal)}`);
                 const json = await res.json();
                 
                 if(json.success && json.data) {

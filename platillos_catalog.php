@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: platillos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-27
-// Versión: 1.10
-// Descripción: Se corrigieron las funciones de resolución de imágenes para que apunten al nuevo bucket de Cloudflare R2 (images.caloritrack.com) en lugar de la ruta local heredada de la API. Soporta cualquier extensión (WebP, JPG, PNG).
+// Fecha: 2026-05-29
+// Versión: 1.11
+// Descripción: Se ajustó el buscador de ingredientes para que consulte a Hermes utilizando el filtro es_publico=1, garantizando que solo se armen platillos con alimentos globales.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -483,7 +483,8 @@ ob_start();
             unitSel.innerHTML = '<option value="1" data-name="g">Gramos (g)</option>';
             
             try {
-                const res = await fetch(`ajax_alimentos.php?action=list&limit=20&search=${encodeURIComponent(searchVal)}`);
+                // Filtramos por alimentos públicos
+                const res = await fetch(`ajax_alimentos.php?action=list&limit=20&es_publico=1&search=${encodeURIComponent(searchVal)}`);
                 const json = await res.json();
                 
                 if(json.success && json.data && json.data.data.length > 0) {
@@ -849,15 +850,15 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div id="tab-es" class="tab-content hidden animate-fade-in">
                         <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇲🇽</span><h4 class="font-bold text-gray-900 dark:text-white">Traducción Español</h4></div>
+                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇲🇽</span><h4 class="font-bold text-gray-900 dark:text-white">Textos Comerciales en Español</h4></div>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre (es-MX)</label>
-                                    <input type="text" id="inp_nombre_es" required class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre Comercial (display_name_es)</label>
+                                    <input type="text" id="inp_nombre_es" required placeholder="Plan Déficit Moderado" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción / Receta Corta (es-MX)</label>
-                                    <textarea id="inp_descripcion_es" rows="4" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción del Plan (description_es)</label>
+                                    <textarea id="inp_description_es" rows="4" placeholder="Plan estructurado para reducir grasa de manera balanceada..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
                                 </div>
                             </div>
                         </div>
@@ -865,15 +866,15 @@ require_once __DIR__ . '/includes/header.php';
 
                     <div id="tab-en" class="tab-content hidden animate-fade-in">
                         <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇺🇸</span><h4 class="font-bold text-gray-900 dark:text-white">Traducción Inglés</h4></div>
+                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇺🇸</span><h4 class="font-bold text-gray-900 dark:text-white">Textos Comerciales en Inglés</h4></div>
                             <div class="space-y-4">
                                 <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Name (en-US)</label>
-                                    <input type="text" id="inp_nombre_en" required class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Commercial Name (display_name_en)</label>
+                                    <input type="text" id="inp_display_name_en" required placeholder="Moderate Deficit Plan" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
                                 </div>
                                 <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Description / Short Recipe (en-US)</label>
-                                    <textarea id="inp_descripcion_en" rows="4" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Plan Description (description_en)</label>
+                                    <textarea id="inp_description_en" rows="4" placeholder="Structured plan to reduce fat in a balanced way..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
                                 </div>
                             </div>
                         </div>

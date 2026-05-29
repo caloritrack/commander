@@ -1,13 +1,13 @@
 <?php
 // Nombre del archivo: planes_v2_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-26
-// Versión: 1.5
-// Descripción: Interfaz gráfica (CRUD) para los nuevos Planes V2. Se corrigió el valor por defecto de dificultad a "Novato" en el formulario y JS para coincidir exactamente con el ENUM de la base de datos ('Novato', 'Intermedio', 'Avanzado').
+// Fecha: 2026-05-29
+// Versión: 1.6
+// Descripción: Interfaz gráfica (CRUD) para los Planes Alimenticios (anteriormente V2). Se limpiaron las referencias a "V2" y los íconos de cohete.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
-$pageTitle = 'Catálogo de Planes V2 | Portal de Héroes Caloritrack';
+$pageTitle = 'Catálogo de Planes Alimenticios | Portal de Héroes Caloritrack';
 $bodyClass = 'bg-wellness min-h-screen flex font-sans text-gray-800 antialiased overflow-hidden relative';
 
 ob_start();
@@ -86,7 +86,6 @@ ob_start();
             document.getElementById('tab-' + tabId).classList.remove('hidden');
             const btn = document.getElementById('btn-tab-' + tabId);
             btn.classList.remove('text-gray-500', 'border-transparent');
-            
             if(tabId === 'dietas') {
                 btn.classList.add('text-blue-600', 'border-blue-600', 'dark:text-blue-400', 'dark:border-blue-400');
             } else if(tabId === 'ciclado') {
@@ -213,7 +212,7 @@ ob_start();
 
                     let html = '';
                     if(data.length === 0) {
-                        html = `<tr><td colspan="7" class="text-center py-12 text-gray-500 font-medium"><i class="ph ph-calendar-check text-4xl block mb-2 opacity-50"></i>No se encontraron planes V2.</td></tr>`;
+                        html = `<tr><td colspan="7" class="text-center py-12 text-gray-500 font-medium"><i class="ph ph-calendar-check text-4xl block mb-2 opacity-50"></i>No se encontraron planes alimenticios.</td></tr>`;
                     } else {
                         data.forEach(item => {
                             const activeBadge = item.is_active == 1 
@@ -239,7 +238,7 @@ ob_start();
 
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
-                                    <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">V2-${item.id_plan_catalogo}</td>
+                                    <td class="py-3 px-4 whitespace-nowrap text-xs text-gray-500 font-mono">ID: ${item.id_plan_catalogo}</td>
                                     <td class="py-3 px-4">
                                         <div class="flex items-center">
                                             <p class="text-sm font-bold text-gray-900 dark:text-white">${item.display_name_es || item.key_name}</p>
@@ -247,7 +246,6 @@ ob_start();
                                         </div>
                                         <p class="text-[10px] text-gray-500 font-mono uppercase">${item.key_name}</p>
                                     </td>
-                                    
                                     <td class="py-3 px-4 max-w-[200px]">
                                         <div class="flex flex-wrap mb-1">${dietasHtml}</div>
                                         <p class="text-[11px] text-gray-500 line-clamp-1 border-t border-gray-100 dark:border-gray-700 pt-1 mt-1">${objetivoLabel}</p>
@@ -287,8 +285,8 @@ ob_start();
 
             document.getElementById('formModal').classList.remove('hidden');
             document.getElementById('formTitle').innerHTML = id 
-                ? '<i class="ph-fill ph-rocket-launch text-calori-500 mr-2"></i> Editar Plan Algorítmico V2' 
-                : '<i class="ph-fill ph-rocket-launch text-calori-500 mr-2"></i> Nuevo Plan Algorítmico V2';
+                ? '<i class="ph-fill ph-calendar-check text-calori-500 mr-2"></i> Editar Plan Alimenticio' 
+                : '<i class="ph-fill ph-calendar-check text-calori-500 mr-2"></i> Nuevo Plan Alimenticio';
             
             document.getElementById('formPlan').reset();
             document.getElementById('dietaSelectDropdown').value = '';
@@ -303,7 +301,6 @@ ob_start();
                         const item = json.data.data;
                         document.getElementById('inp_key_name').value = item.key_name || '';
                         document.getElementById('inp_objective').value = item.objective || '';
-                        // KR-FIX: Ahora seteamos a "Novato" como el ENUM real para que no de error Truncado
                         document.getElementById('inp_difficulty_level').value = item.difficulty_level || 'Novato';
                         document.getElementById('inp_is_active').checked = (item.is_active == 1);
                         document.getElementById('inp_duration_days').value = item.duration_days || 7;
@@ -342,7 +339,6 @@ ob_start();
 
         async function savePlan(event) {
             event.preventDefault();
-            
             const keyName = document.getElementById('inp_key_name').value.trim();
             if(!keyName) {
                 switchTab('general');
@@ -366,8 +362,7 @@ ob_start();
             const btn = document.getElementById('btnSave');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
-            
-            // Función ultra-segura para capturar números evitando que "0" se evalúe como falsy
+
             const getFloat = (id, def) => { const v = parseFloat(document.getElementById(id).value); return isNaN(v) ? def : v; };
             const getInt = (id, def) => { const v = parseInt(document.getElementById(id).value, 10); return isNaN(v) ? def : v; };
 
@@ -379,7 +374,6 @@ ob_start();
                 objective_phase_days: getInt('inp_objective_phase_days', 0),
                 rest_phase_days: getInt('inp_rest_phase_days', 0),
                 rest_caloric_adjustment_perc: getFloat('inp_rest_caloric_adjustment_perc', 0),
-                // KR-FIX: Esto mandará Novato, Intermedio o Avanzado correctamente
                 difficulty_level: document.getElementById('inp_difficulty_level').value,
                 duration_days: getInt('inp_duration_days', 28),
                 meals_per_day: getInt('inp_meals_per_day', 4),
@@ -391,7 +385,7 @@ ob_start();
                 description_en: document.getElementById('inp_description_en').value.trim(),
                 dietas: currentDietasIds
             };
-            
+
             const endpoint = currentPlanId ? `ajax_planes_v2.php?action=update&id=${currentPlanId}` : `ajax_planes_v2.php?action=create`;
             
             try {
@@ -400,11 +394,10 @@ ob_start();
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify(payload)
                 });
-                
                 const json = await res.json();
 
                 if(json.success || json.http_code === 201 || json.http_code === 200) {
-                    showToast(currentPlanId ? "Plan V2 actualizado." : "Plan V2 creado exitosamente.", "success");
+                    showToast(currentPlanId ? "Plan actualizado exitosamente." : "Plan creado exitosamente.", "success");
                     closeFormModal();
                     loadPlanes(currentPage);
                 } else if(json.http_code === 409) {
@@ -416,7 +409,7 @@ ob_start();
             } catch(e) {
                 showToast("Error de red.", "error");
             } finally {
-                btn.innerHTML = 'Guardar Plan V2';
+                btn.innerHTML = 'Guardar Plan';
                 btn.disabled = false;
             }
         }
@@ -435,13 +428,13 @@ ob_start();
             const btn = document.getElementById('btnConfirmDelete');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Eliminando...';
             btn.disabled = true;
-            
+
             try {
                 const res = await fetch(`ajax_planes_v2.php?action=delete&id=${deleteId}`, { method: 'DELETE' });
                 const json = await res.json();
 
                 if (json.success || json.http_code === 204) {
-                    showToast("Plan V2 eliminado correctamente.", "success");
+                    showToast("Plan eliminado correctamente.", "success");
                     closeDeleteModal();
                     loadPlanes(currentPage);
                 } else if (json.http_code === 409) {
@@ -495,7 +488,7 @@ require_once __DIR__ . '/includes/header.php';
             <div class="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4 shrink-0">
                 <div>
                     <div class="flex items-center gap-2">
-                        <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Catálogo de Planes V2</h1>
+                        <h1 class="text-3xl font-bold text-gray-900 dark:text-white tracking-tight">Catálogo de Planes Alimenticios</h1>
                         <span class="px-2 py-1 bg-purple-100 text-purple-700 text-xs font-bold rounded-lg uppercase">Algorítmicos</span>
                     </div>
                     <p class="text-gray-500 dark:text-gray-400 mt-1">Estructuración inteligente con soporte para ciclado calórico y traducciones paralelas.</p>
@@ -508,14 +501,14 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                     <button onclick="loadPlanes(1)" class="p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm"><i class="ph ph-arrows-clockwise font-bold"></i></button>
                     <button onclick="openFormModal()" class="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-sm font-bold hover:bg-gray-800 dark:hover:bg-gray-100 transition-all shadow-lg shadow-gray-900/10 dark:shadow-white/5">
-                        <i class="ph ph-rocket-launch text-lg"></i>
-                        Nuevo Plan V2
+                        <i class="ph ph-plus-circle text-lg"></i>
+                        Nuevo Plan
                     </button>
                 </div>
             </div>
 
             <div class="mb-4">
-                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Planes V2: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
+                <span class="text-[10px] font-bold text-gray-400 uppercase tracking-widest">Total Planes: <span id="totalCounter" class="text-calori-600 dark:text-calori-400 font-black text-sm">--</span></span>
             </div>
 
             <div id="tableLoader" class="flex-1 flex flex-col items-center justify-center">
@@ -574,7 +567,6 @@ require_once __DIR__ . '/includes/header.php';
             </div>
 
             <div class="flex-1 overflow-y-auto p-6 bg-gray-50/50 dark:bg-gray-900/50 relative">
-                
                 <form id="formPlan" onsubmit="savePlan(event)" novalidate>
                     
                     <div id="tab-general" class="tab-content animate-fade-in space-y-6">
@@ -584,7 +576,7 @@ require_once __DIR__ . '/includes/header.php';
                             <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <div>
                                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">key_name (Identificador)</label>
-                                    <input type="text" id="inp_key_name" required placeholder="ej. plan_deficit_moderado_v2" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white font-mono">
+                                    <input type="text" id="inp_key_name" required placeholder="ej. plan_deficit_moderado" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white font-mono">
                                 </div>
                                 <div>
                                     <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Objetivo del Plan</label>
@@ -630,7 +622,7 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
 
                         <div class="p-4 bg-green-50/50 dark:bg-green-900/10 rounded-xl border border-green-100 dark:border-green-900/30">
-                            <label class="flex items-center gap-2 cursor-pointer w-fit"><input type="checkbox" id="inp_is_active" class="w-5 h-5 text-calori-600 rounded" checked><span class="text-sm font-bold text-gray-700 dark:text-gray-300">Plan V2 Activo y Disponible Inmediatamente</span></label>
+                            <label class="flex items-center gap-2 cursor-pointer w-fit"><input type="checkbox" id="inp_is_active" class="w-5 h-5 text-calori-600 rounded" checked><span class="text-sm font-bold text-gray-700 dark:text-gray-300">Plan Activo y Disponible Inmediatamente</span></label>
                         </div>
                     </div>
 
@@ -675,7 +667,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div id="tab-dietas" class="tab-content hidden animate-fade-in space-y-6">
                         <div class="bg-blue-50/30 dark:bg-blue-900/10 p-5 rounded-2xl border border-blue-100 dark:border-blue-900/30">
                             <h4 class="font-black text-blue-900 dark:text-blue-400 flex items-center mb-1"><i class="ph-fill ph-magnifying-glass text-xl mr-2"></i> Asignación de Dietas (Array de Enteros)</h4>
-                            <p class="text-xs text-blue-600/70 dark:text-blue-400/70 mb-4">Selecciona las dietas del catálogo para integrarlas en el algoritmo V2.</p>
+                            <p class="text-xs text-blue-600/70 dark:text-blue-400/70 mb-4">Selecciona las dietas del catálogo para integrarlas en el algoritmo.</p>
                             
                             <div class="flex flex-col md:flex-row gap-3">
                                 <select id="dietaSelectDropdown" class="flex-1 bg-white dark:bg-gray-900 border border-blue-200 dark:border-blue-800 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none dark:text-white">
@@ -737,7 +729,7 @@ require_once __DIR__ . '/includes/header.php';
                     <div class="mt-6 flex justify-end gap-3 pt-4 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 bg-gray-50/90 dark:bg-gray-900/90 backdrop-blur-sm -mx-6 px-6 pb-2">
                         <button type="button" onclick="closeFormModal()" class="px-5 py-2.5 bg-gray-200 dark:bg-gray-800 text-gray-700 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-300 dark:hover:bg-gray-700 transition-colors">Cancelar</button>
                         <button type="submit" id="btnSave" class="px-5 py-2.5 bg-calori-600 text-white font-bold rounded-xl hover:bg-calori-700 shadow-lg shadow-calori-600/30 transition-all flex items-center gap-2">
-                            Guardar Plan V2
+                            Guardar Plan
                         </button>
                     </div>
                 </form>
@@ -749,7 +741,7 @@ require_once __DIR__ . '/includes/header.php';
         <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeDeleteModal()"></div>
         <div class="bg-white dark:bg-darkbase-900 border border-white/50 dark:border-gray-700 w-full max-w-sm rounded-3xl p-8 shadow-2xl relative text-center">
             <div class="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mx-auto mb-4"><i class="ph ph-trash text-3xl"></i></div>
-            <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">¿Eliminar Plan V2?</h3>
+            <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">¿Eliminar Plan?</h3>
             <p class="text-sm text-gray-500 dark:text-gray-400 mb-8">Esta acción borrará de forma permanente el plan y todas sus traducciones. ¿Proceder?</p>
             <div class="flex gap-3">
                 <button onclick="closeDeleteModal()" class="flex-1 py-3 px-4 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 font-bold rounded-xl hover:bg-gray-200 transition-colors">Cancelar</button>
