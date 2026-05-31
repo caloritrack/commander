@@ -1785,8 +1785,8 @@ Archivo: ./platillos_catalog.php
 // Nombre del archivo: platillos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
 // Fecha: 2026-05-29
-// Versión: 1.11
-// Descripción: Se ajustó el buscador de ingredientes para que consulte a Hermes utilizando el filtro es_publico=1, garantizando que solo se armen platillos con alimentos globales.
+// Versión: 1.14
+// Descripción: Se fusionaron las pestañas de Español e Inglés en una sola pestaña unificada ("Traducciones") para mejorar la experiencia de usuario (UX) al momento de crear o editar platillos. Los inputs ahora se muestran en un grid de dos columnas en pantallas grandes para facilitar la escritura simultánea, manteniendo intacta la lógica de guardado y lectura de la API.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -2094,6 +2094,14 @@ ob_start();
                 : '<i class="ph-fill ph-cooking-pot text-calori-500 mr-2"></i> Nuevo Platillo';
             
             document.getElementById('formPlatillo').reset();
+            
+            // Forzamos el estado inicial del botón por si quedó pegado en un intento anterior
+            const btnSave = document.getElementById('btnSave');
+            if(btnSave) {
+                btnSave.innerHTML = 'Guardar Platillo';
+                btnSave.disabled = false;
+            }
+
             document.getElementById('compressionStats').classList.add('hidden');
             document.getElementById('liveImagePreviewContainer').innerHTML = `
                 <div class="flex flex-col items-center justify-center p-6 text-center text-gray-400 dark:text-gray-500">
@@ -2205,28 +2213,28 @@ ob_start();
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
 
-            const ingredientesLimpio = currentIngredients.map(ing => ({
-                id_alimento: parseInt(ing.id_alimento),
-                cantidad_gramos: parseFloat(ing.cantidad_gramos)
-            }));
-
-            const payload = {
-                nombre_clave: document.getElementById('inp_nombre_clave').value.trim(),
-                sugerencia_comida: document.getElementById('inp_sugerencia_comida').value,
-                url_imagen: document.getElementById('inp_url_imagen').value.trim(),
-                alt_text_imagen: document.getElementById('inp_alt_text_imagen').value.trim(),
-                activo: document.getElementById('inp_activo').checked ? 1 : 0,
-                es_publico: document.getElementById('inp_es_publico').checked ? 1 : 0,
-                nombre_es: document.getElementById('inp_nombre_es').value.trim(),
-                descripcion_es: document.getElementById('inp_descripcion_es').value.trim(),
-                nombre_en: document.getElementById('inp_nombre_en').value.trim(),
-                descripcion_en: document.getElementById('inp_descripcion_en').value.trim(),
-                ingredientes: ingredientesLimpio
-            };
-
-            const endpoint = currentPlatilloId ? `ajax_platillos.php?action=update&id=${currentPlatilloId}` : `ajax_platillos.php?action=create`;
-            
             try {
+                const ingredientesLimpio = currentIngredients.map(ing => ({
+                    id_alimento: parseInt(ing.id_alimento),
+                    cantidad_gramos: parseFloat(ing.cantidad_gramos)
+                }));
+
+                const payload = {
+                    nombre_clave: document.getElementById('inp_nombre_clave').value.trim(),
+                    sugerencia_comida: document.getElementById('inp_sugerencia_comida').value,
+                    url_imagen: document.getElementById('inp_url_imagen').value.trim(),
+                    alt_text_imagen: document.getElementById('inp_alt_text_imagen').value.trim(),
+                    activo: document.getElementById('inp_activo').checked ? 1 : 0,
+                    es_publico: document.getElementById('inp_es_publico').checked ? 1 : 0,
+                    nombre_es: document.getElementById('inp_nombre_es').value.trim(),
+                    descripcion_es: document.getElementById('inp_descripcion_es').value.trim(),
+                    nombre_en: document.getElementById('inp_nombre_en').value.trim(),
+                    descripcion_en: document.getElementById('inp_descripcion_en').value.trim(),
+                    ingredientes: ingredientesLimpio
+                };
+
+                const endpoint = currentPlatilloId ? `ajax_platillos.php?action=update&id=${currentPlatilloId}` : `ajax_platillos.php?action=create`;
+                
                 const res = await fetch(endpoint, {
                     method: currentPlatilloId ? 'PUT' : 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -2244,7 +2252,8 @@ ob_start();
                     showToast("Error API: " + (json.data?.error || json.message || 'Verifica los datos'), "error");
                 }
             } catch(e) {
-                showToast("Error de conexión al guardar.", "error");
+                console.error(e);
+                showToast("Error de conexión o datos inválidos al guardar.", "error");
             } finally {
                 btn.innerHTML = 'Guardar Platillo';
                 btn.disabled = false;
@@ -2549,8 +2558,7 @@ require_once __DIR__ . '/includes/header.php';
 
             <div class="flex border-b border-gray-100 dark:border-gray-800 px-6 pt-2 shrink-0 overflow-x-auto scrollbar-hide">
                 <button type="button" id="btn-tab-general" onclick="switchTab('general')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 text-calori-600 border-calori-600 whitespace-nowrap">Datos Generales</button>
-                <button type="button" id="btn-tab-es" onclick="switchTab('es')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap"><span class="mr-1">🇲🇽</span> Español</button>
-                <button type="button" id="btn-tab-en" onclick="switchTab('en')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap"><span class="mr-1">🇺🇸</span> Inglés</button>
+                <button type="button" id="btn-tab-textos" onclick="switchTab('textos')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-gray-500 hover:text-gray-700 dark:hover:text-gray-300 whitespace-nowrap"><i class="ph ph-translate mr-1"></i> Traducciones</button>
                 <button type="button" id="btn-tab-ingredientes" onclick="switchTab('ingredientes')" class="tab-btn px-4 py-2 text-sm font-bold border-b-2 border-transparent text-blue-500 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300 whitespace-nowrap"><i class="ph ph-apple-logo mr-1"></i>Ingredientes</button>
             </div>
 
@@ -2631,35 +2639,39 @@ require_once __DIR__ . '/includes/header.php';
                         </div>
                     </div>
 
-                    <div id="tab-es" class="tab-content hidden animate-fade-in">
-                        <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇲🇽</span><h4 class="font-bold text-gray-900 dark:text-white">Textos Comerciales en Español</h4></div>
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre Comercial (display_name_es)</label>
-                                    <input type="text" id="inp_nombre_es" required placeholder="Plan Déficit Moderado" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción del Plan (description_es)</label>
-                                    <textarea id="inp_description_es" rows="4" placeholder="Plan estructurado para reducir grasa de manera balanceada..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                    <div id="tab-textos" class="tab-content hidden animate-fade-in space-y-6">
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            
+                            <!-- Español -->
+                            <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇲🇽</span><h4 class="font-bold text-gray-900 dark:text-white">Textos en Español</h4></div>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Nombre Comercial (nombre_es)</label>
+                                        <input type="text" id="inp_nombre_es" required placeholder="Pollo Asado con Verduras" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Descripción del Platillo (es-MX)</label>
+                                        <textarea id="inp_descripcion_es" rows="6" placeholder="Delicioso platillo rico en proteínas..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                                    </div>
                                 </div>
                             </div>
-                        </div>
-                    </div>
 
-                    <div id="tab-en" class="tab-content hidden animate-fade-in">
-                        <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
-                            <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇺🇸</span><h4 class="font-bold text-gray-900 dark:text-white">Textos Comerciales en Inglés</h4></div>
-                            <div class="space-y-4">
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Commercial Name (display_name_en)</label>
-                                    <input type="text" id="inp_display_name_en" required placeholder="Moderate Deficit Plan" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
-                                </div>
-                                <div>
-                                    <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Plan Description (description_en)</label>
-                                    <textarea id="inp_description_en" rows="4" placeholder="Structured plan to reduce fat in a balanced way..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                            <!-- Inglés -->
+                            <div class="bg-white dark:bg-darkbase-800 p-5 rounded-xl border border-gray-200 dark:border-gray-700 shadow-sm">
+                                <div class="flex items-center gap-2 mb-4"><span class="text-2xl">🇺🇸</span><h4 class="font-bold text-gray-900 dark:text-white">Textos en Inglés</h4></div>
+                                <div class="space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Commercial Name (nombre_en)</label>
+                                        <input type="text" id="inp_nombre_en" required placeholder="Grilled Chicken with Veggies" class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white">
+                                    </div>
+                                    <div>
+                                        <label class="block text-xs font-bold text-gray-500 uppercase mb-1">Dish Description (en-US)</label>
+                                        <textarea id="inp_descripcion_en" rows="6" placeholder="Delicious high protein dish..." class="w-full bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-calori-500 outline-none dark:text-white resize-none"></textarea>
+                                    </div>
                                 </div>
                             </div>
+
                         </div>
                     </div>
 
@@ -5412,9 +5424,9 @@ Archivo: ./dietas_catalog.php
 <?php
 // Nombre del archivo: dietas_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-25
-// Versión: 1.6
-// Descripción: Interfaz gráfica (CRUD) para el Catálogo de Dietas. Se ajustó el payload de "platillos" para enviar un arreglo de enteros a Hermes y se hizo a prueba de balas la recepción de IDs.
+// Fecha: 2026-05-29
+// Versión: 1.9
+// Descripción: Se solucionó el problema del filtrado visual convirtiendo explícitamente los IDs a String. Esto evita el fallo de la validación estricta de Javascript (includes) entre Enteros y Strings provenientes de la API, ocultando por fin los platillos ya asignados.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -5511,7 +5523,7 @@ ob_start();
             } else if (rawUrl.includes('foodimages/')) {
                 return 'https://api.caloritrack.com/' + rawUrl;
             } else {
-                return 'https://api.caloritrack.com/foodimages/platillos/' + rawUrl;
+                return 'https://images.caloritrack.com/platillos/' + rawUrl;
             }
         }
 
@@ -5647,7 +5659,6 @@ ob_start();
                     }
                     
                     currentPlatillos = arrPlatillos.map(p => {
-                        // KRILLIN FIX: A prueba de balas. Si la API regresa un arreglo de puros IDs [58, 61]
                         if (typeof p === 'number' || typeof p === 'string') {
                             return {
                                 id_platillo: parseInt(p),
@@ -5655,7 +5666,6 @@ ob_start();
                                 url_imagen: ''
                             };
                         }
-                        // Si la API regresa un arreglo de objetos complejos
                         return {
                             id_platillo: p.id_platillo,
                             nombre: p.nombre_es || p.nombre_clave || 'Platillo #' + p.id_platillo,
@@ -5672,7 +5682,6 @@ ob_start();
                                 .then(j => {
                                     if(j.success && j.data && j.data.data && j.data.data.url_imagen) {
                                         currentPlatillos[idx].url_imagen = j.data.data.url_imagen;
-                                        // Actualizamos también el nombre si era solo un ID
                                         if (currentPlatillos[idx].nombre.startsWith('Platillo #')) {
                                             currentPlatillos[idx].nombre = j.data.data.nombre_es || j.data.data.nombre_clave;
                                         }
@@ -5710,7 +5719,6 @@ ob_start();
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
 
-            // KRILLIN FIX: Extraemos SÓLO los IDs como arreglo plano de enteros para Hermes
             const platillosLimpio = currentPlatillos.map(p => parseInt(p.id_platillo));
 
             const payload = {
@@ -5828,7 +5836,7 @@ ob_start();
                 currentPlatillos.forEach((p, index) => {
                     const imgSrc = resolvePlatilloImageUrl(p.url_imagen);
                     const imgHtml = imgSrc
-                        ? `<img src="${imgSrc}" alt="IMG" class="w-10 h-10 object-cover rounded-lg shadow-sm border border-gray-200 dark:border-gray-700" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=&quot;w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center border border-gray-200 dark:border-gray-700&quot;><i class=&quot;ph ph-cooking-pot text-gray-400 text-xl&quot;></i></div>';">`
+                        ? `<img src="${imgSrc}" alt="IMG" class="w-10 h-10 object-cover rounded-lg shadow-sm border border-gray-200 dark:border-gray-700" onerror="this.onerror=null; this.outerHTML='<div class=&quot;w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center border border-gray-200 dark:border-gray-700&quot;><i class=&quot;ph ph-cooking-pot text-gray-400 text-xl&quot;></i></div>';">`
                         : `<div class="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-lg flex items-center justify-center border border-gray-200 dark:border-gray-700"><i class="ph ph-cooking-pot text-gray-400 text-xl"></i></div>`;
 
                     html += `
@@ -5863,13 +5871,12 @@ ob_start();
             const loader = document.getElementById('visualCatalogLoader');
             loader.classList.remove('hidden');
             try {
-                // Pedimos un listado amplio para que el usuario pueda explorar (hasta 200)
-                const res = await fetch(`ajax_platillos.php?action=list&limit=200`);
+                const res = await fetch(`ajax_platillos.php?action=list&limit=1000`);
                 const json = await res.json();
                 
                 if(json.success && json.data && json.data.data) {
                     allVisualPlatillos = json.data.data;
-                    renderVisualCatalogGrid(allVisualPlatillos);
+                    filterVisualCatalog();
                 } else {
                     document.getElementById('visualCatalogGrid').innerHTML = '<p class="col-span-full text-center text-gray-500 py-8">No se encontraron platillos en el catálogo.</p>';
                 }
@@ -5878,6 +5885,24 @@ ob_start();
             } finally {
                 loader.classList.add('hidden');
             }
+        }
+
+        function filterVisualCatalog() {
+            const query = document.getElementById('visualSearchInput').value.toLowerCase();
+            
+            // KRILLIN FIX: Convertimos todos los IDs a String de forma explícita.
+            // Así evitamos que la función .includes() falle al comparar Enteros con Strings provenientes de la API.
+            const idsYaAsignados = currentPlatillos.map(p => String(p.id_platillo));
+
+            const filtered = allVisualPlatillos.filter(p => {
+                // Si el ID en texto ya está en la lista de asignados, lo ocultamos para que no salga en el catálogo visual
+                if (idsYaAsignados.includes(String(p.id_platillo))) return false;
+
+                const nombre = (p.nombre_es || p.nombre_clave || '').toLowerCase();
+                const desc = (p.descripcion_es || p.ingredientes || p.nombre_en || '').toLowerCase();
+                return nombre.includes(query) || desc.includes(query) || String(p.id_platillo).includes(query);
+            });
+            renderVisualCatalogGrid(filtered);
         }
 
         function renderVisualCatalogGrid(platillos) {
@@ -5890,12 +5915,17 @@ ob_start();
                 const imgSrc = resolvePlatilloImageUrl(p.url_imagen);
                 
                 const imgHtml = imgSrc 
-                    ? `<img src="${imgSrc}" class="w-20 h-20 object-cover rounded-xl border border-gray-200 dark:border-gray-700 shrink-0" onerror="this.onerror=null; this.parentElement.innerHTML='<div class=\\'w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-center shrink-0\\'><i class=\\'ph ph-cooking-pot text-2xl text-gray-400\\'></i></div>';">`
+                    ? `<img src="${imgSrc}" class="w-20 h-20 object-cover rounded-xl border border-gray-200 dark:border-gray-700 shrink-0" onerror="this.onerror=null; this.outerHTML='<div class=&quot;w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-center shrink-0&quot;><i class=&quot;ph ph-cooking-pot text-2xl text-gray-400&quot;></i></div>';">`
                     : `<div class="w-20 h-20 bg-gray-100 dark:bg-gray-800 rounded-xl border border-gray-200 dark:border-gray-700 flex items-center justify-center shrink-0"><i class="ph ph-cooking-pot text-2xl text-gray-400"></i></div>`;
                 
-                // Usamos descripcion_es o ingredientes si la API los trae, si no, un texto estándar.
-                const descripcion = p.descripcion_es || p.ingredientes || p.nombre_en || 'Sin detalles adicionales.';
-                const safeNombre = (p.nombre_es || p.nombre_clave || '').replace(/'/g, "\\'");
+                let descripcion = p.descripcion_es || p.nombre_en || '';
+                if (!descripcion && Array.isArray(p.ingredientes) && p.ingredientes.length > 0) {
+                    descripcion = p.ingredientes.length + ' ingredientes asignados.';
+                } else if (!descripcion) {
+                    descripcion = 'Sin detalles adicionales.';
+                }
+                
+                const safeNombre = (p.nombre_es || p.nombre_clave || '').replace(/'/g, "\\'").replace(/"/g, "&quot;");
                 const safeUrl = (p.url_imagen || '').replace(/'/g, "\\'");
 
                 html += `
@@ -5921,16 +5951,6 @@ ob_start();
             
             if(html === '') html = '<p class="col-span-full text-center text-gray-500 py-8">No hay resultados que coincidan con tu búsqueda.</p>';
             grid.innerHTML = html;
-        }
-
-        function filterVisualCatalog() {
-            const query = document.getElementById('visualSearchInput').value.toLowerCase();
-            const filtered = allVisualPlatillos.filter(p => {
-                const nombre = (p.nombre_es || p.nombre_clave || '').toLowerCase();
-                const desc = (p.descripcion_es || p.ingredientes || p.nombre_en || '').toLowerCase();
-                return nombre.includes(query) || desc.includes(query) || p.id_platillo.toString().includes(query);
-            });
-            renderVisualCatalogGrid(filtered);
         }
 
         function toggleVisualSelection(id, nombre, url_imagen) {
@@ -6063,7 +6083,7 @@ require_once __DIR__ . '/includes/header.php';
                         <input type="text" id="searchInput" onkeydown="searchAction(event)" placeholder="Buscar dieta..." class="w-full bg-white/70 dark:bg-darkbase-900/70 border border-white/50 dark:border-gray-700 rounded-xl py-2 pl-10 pr-4 text-sm focus:outline-none focus:ring-2 focus:ring-calori-500 transition-all dark:text-white shadow-sm">
                     </div>
                     
-                    <button onclick="loadDietas(1)" class="p-2.5 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm"><i class="ph ph-arrows-clockwise font-bold"></i></button>
+                    <button onclick="loadDietas(1)" class="p-2.5 bg-gray-100 dark:bg-darkbase-800 text-gray-600 dark:text-gray-300 rounded-xl hover:bg-gray-200 dark:hover:bg-gray-700 transition-colors shadow-sm"><i class="ph ph-arrows-clockwise font-bold"></i></button>
                     
                     <button onclick="openFormModal()" class="flex items-center gap-2 px-5 py-2.5 bg-gray-900 dark:bg-white text-white dark:text-gray-900 rounded-xl text-sm font-bold hover:bg-gray-800 dark:hover:bg-gray-100 transition-all shadow-lg shadow-gray-900/10 dark:shadow-white/5">
                         <i class="ph ph-plus-circle text-lg"></i>
