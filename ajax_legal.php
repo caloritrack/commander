@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 2.6
-// Descripción: Controlador Proxy para Bóveda Legal. Se agregó un bloqueador estricto para evitar peticiones a Hermes si el ID recibido no es válido o viene como "undefined". 
+// Fecha: 2026-06-01
+// Versión: 2.7
+// Descripción: Controlador Proxy para Bóveda Legal. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -19,7 +19,7 @@ function debugLog($message) {
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado.']);
     exit();
 }
 
@@ -28,8 +28,6 @@ $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 $docId = trim($_GET['id'] ?? '');
 
-// KRILLIN FIX: Bloqueador de seguridad. Si el Front-End no manda un UUID real, cortamos la comunicación
-// para no bombardear a Hermes con peticiones que darán error 404 de todos modos.
 if ($action === 'activate' || $action === 'delete') {
     if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''])) {
         echo json_encode([
@@ -43,9 +41,6 @@ if ($action === 'activate' || $action === 'delete') {
 
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
-// --------------------------------------------------------------------------------------
-// GENERADOR DE HASH SHA-256
-// --------------------------------------------------------------------------------------
 if ($action === 'generate_hash' && $method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
     $pdfUrl = $input['url'] ?? '';
@@ -67,11 +62,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     exit(); 
 }
 
-// --------------------------------------------------------------------------------------
-// COMUNICACIÓN CON HERMES (API)
-// --------------------------------------------------------------------------------------
 $ch = curl_init();
-
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
@@ -84,26 +75,20 @@ if ($action === 'list' && $method === 'GET') {
 elseif ($action === 'create' && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
-
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
-    debugLog("Enviando petición de creación a Hermes con URLs limpias.");
 } 
 elseif ($action === 'activate' && ($method === 'PUT' || $method === 'POST')) {
     $input = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($input);
-    
-    // Manda exactamente la URL como en Postman
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId) . '/activate');
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $input);
-    debugLog("Enviando $method de activación a Hermes para UUID: $docId");
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId));
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE"); 
-    debugLog("Enviando DELETE a Hermes para UUID: $docId");
 } 
 else {
     echo json_encode(['success' => false, 'message' => 'Acción no soportada.']);
@@ -118,12 +103,18 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204]);
     exit();
 }
 
-if ($httpCode >= 400) { debugLog("ERROR API ($httpCode): $response"); }
+if ($httpCode >= 400 && $httpCode !== 401) { debugLog("ERROR API ($httpCode): $response"); }
 
 echo json_encode([
     'success' => ($httpCode >= 200 && $httpCode < 300),

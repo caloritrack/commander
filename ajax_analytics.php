@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 1.14
-// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'sessions_detail' para consumir el nuevo endpoint de Hermes que devuelve el listado detallado de sesiones individuales.
+// Fecha: 2026-06-01
+// Versión: 1.15
+// Descripción: Controlador AJAX proxy seguro. Se agregó inyección del http_code en la raíz de los errores y se destruye la sesión PHP si Hermes arroja un 401 por expiración.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -35,7 +35,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 // Verificamos que el héroe esté autenticado
 if (!isset($_SESSION['user_token'])) {
     debugLog("Error: Intento de acceso sin token de sesión activo.");
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Inicie sesión nuevamente.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Inicie sesión nuevamente.']);
     exit();
 }
 
@@ -115,8 +115,15 @@ debugLog("Código HTTP recibido: " . $httpCode);
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
     debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    
+    // KRILLIN FIX: Si Hermes nos batea por token caducado (401), destruimos la sesión de PHP de una vez
+    if ($httpCode === 401) {
+        session_destroy();
+    }
+
     echo json_encode([
         'success' => false, 
+        'http_code' => $httpCode, // <-- Lo ponemos en la raíz para que el interceptor del frontend lo caché fácil
         'message' => 'Error al conectar con los servidores de Hermes.',
         'debug' => ['error' => $error, 'http_code' => $httpCode]
     ]);

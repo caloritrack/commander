@@ -1,13 +1,12 @@
 <?php
 // Nombre del archivo: ajax_unidades.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Unidades de Medida. Se comunica de forma segura con Hermes.
+// Fecha: 2026-06-01
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
-// Sistema de logs aislados para depuración
 function debugLogUnidades($message) {
     $logDir = __DIR__ . '/logs';
     if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
@@ -19,9 +18,8 @@ function debugLogUnidades($message) {
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -39,7 +37,6 @@ $headers = [
     'Content-Type: application/json; charset=utf-8'
 ];
 
-// ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
@@ -74,7 +71,6 @@ else {
     exit();
 }
 
-// Configuración Base cURL
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -84,13 +80,17 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Unidad eliminada exitosamente']);
     exit();
 }
 
-// Error crítico de red
 if ($curlError) {
     debugLogUnidades("Error cURL Crítico: " . $curlError);
     echo json_encode(['success' => false, 'message' => 'Error de conexión con Hermes.', 'error' => $curlError]);
@@ -99,7 +99,6 @@ if ($curlError) {
 
 $decodedResponse = json_decode($response, true);
 
-// Manejo de Error 409 (Conflicto Relacional DB - Restricción FK)
 if ($httpCode === 409) {
     echo json_encode([
         'success' => false,
@@ -110,7 +109,6 @@ if ($httpCode === 409) {
     exit();
 }
 
-// Respuesta Estándar de la API
 echo json_encode([
     'success' => ($httpCode >= 200 && $httpCode < 300),
     'http_code' => $httpCode,

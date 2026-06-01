@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-29
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Alimentos comunicándose con la API de Hermes. Se agregó soporte para reenviar el parámetro opcional es_publico a Hermes.
+// Fecha: 2026-06-01
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401 (Token expirado).
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -21,7 +21,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -96,6 +96,12 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
+
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
 
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {

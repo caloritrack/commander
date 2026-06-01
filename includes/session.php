@@ -1,15 +1,15 @@
 <?php
 // Nombre del archivo: session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 2.1
-// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia.
+// Fecha: 2026-06-01
+// Versión: 2.2
+// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia. ADEMÁS: Se integró validación profunda del token JWT de Hermes para desconexión automática al expirar.
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
 $segundos_sesion = 60 * 60 * 24 * $dias_sesion;
 
-// KRILLIN FIX: Aislamos las sesiones en una carpeta propia dentro de 'includes'
+// Aislamos las sesiones en una carpeta propia dentro de 'includes'
 // para que el cron de limpieza nocturno del servidor no nos las elimine.
 $session_path = __DIR__ . '/sessions_data';
 if (!is_dir($session_path)) {
@@ -52,5 +52,54 @@ if (isset($_COOKIE[session_name()])) {
         true, 
         true
     );
+}
+
+// =====================================================================
+// 5. [KRILLIN FIX] EL CERBERO DE PHP: Validación del Token JWT
+// =====================================================================
+if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
+    $tokenParts = explode('.', $_SESSION['user_token']);
+
+    // Un JWT válido siempre tiene 3 partes separadas por puntos
+    if (count($tokenParts) === 3) {
+        // Decodificamos el payload (reemplazamos caracteres de Base64Url a Base64 normal por seguridad)
+        $base64 = str_replace(['-', '_'], ['+', '/'], $tokenParts[1]);
+        $payload = json_decode(base64_decode($base64), true);
+        
+        // Verificamos si el JWT tiene fecha de caducidad
+        if (isset($payload['exp'])) {
+            $fechaCaducidad = $payload['exp'];
+            
+            // Validamos si la fecha actual ya superó la de caducidad
+            // (Le damos 5 segundos de margen por desface de relojes de servidores)
+            if (time() >= ($fechaCaducidad - 5)) { 
+                
+                // ¡El token ya valió! Matamos la sesión desde el origen
+                session_unset();
+                session_destroy();
+                
+                // Borramos la cookie de la sesión
+                if (isset($_COOKIE[session_name()])) {
+                    setcookie(session_name(), '', time() - 3600, '/');
+                }
+                
+                // Detectar si la petición que disparó esto es AJAX/Fetch o una navegación de página normal
+                $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') || 
+                          (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+                
+                if ($isAjax) {
+                    // Si es un AJAX, le devolvemos un 401 para que el Javascript del <head> levante el modal chulo
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'Sesión expirada.']);
+                    exit();
+                } else {
+                    // Si diste clic a una opción del menú y era navegación normal, te manda a logout
+                    // Asumimos que tienes un logout.php que redirige al login final
+                    header("Location: logout.php");
+                    exit();
+                }
+            }
+        }
+    }
 }
 ?>

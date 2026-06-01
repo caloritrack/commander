@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_equivalencias.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful aislado para gestionar el CRUD de las Equivalencias de Unidades asignadas a los Alimentos.
+// Fecha: 2026-06-01
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -18,9 +18,8 @@ function debugLogEquivalencias($message) {
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Validación de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado.']);
     exit();
 }
 
@@ -35,7 +34,6 @@ if (empty($id_alimento)) {
     exit();
 }
 
-// URL base de Hermes para este dominio
 $apiUrl = 'https://api.caloritrack.com/admin/alimentos/' . urlencode($id_alimento) . '/equivalencias';
 
 $ch = curl_init();
@@ -57,9 +55,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { 
-        echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para actualizar.']); exit(); 
-    }
+    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para actualizar.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
@@ -67,9 +63,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { 
-        echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para eliminar.']); exit(); 
-    }
+    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para eliminar.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -87,7 +81,12 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// Eliminar exitoso (200 OK según la doc de Hermes)
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 200 && $action === 'delete') {
     echo json_encode(['success' => true, 'message' => 'Equivalencia eliminada correctamente.']);
     exit();
@@ -101,7 +100,6 @@ if ($curlError) {
 
 $decodedResponse = json_decode($response, true);
 
-// Manejo de Error 409: La unidad ya está asignada al alimento (Conflicto)
 if ($httpCode === 409) {
     echo json_encode([
         'success' => false,

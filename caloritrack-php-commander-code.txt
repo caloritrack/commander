@@ -810,13 +810,12 @@ Archivo: ./ajax_unidades.php
 <?php
 // Nombre del archivo: ajax_unidades.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Unidades de Medida. Se comunica de forma segura con Hermes.
+// Fecha: 2026-06-01
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
-// Sistema de logs aislados para depuración
 function debugLogUnidades($message) {
     $logDir = __DIR__ . '/logs';
     if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
@@ -828,9 +827,8 @@ function debugLogUnidades($message) {
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -848,7 +846,6 @@ $headers = [
     'Content-Type: application/json; charset=utf-8'
 ];
 
-// ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
@@ -883,7 +880,6 @@ else {
     exit();
 }
 
-// Configuración Base cURL
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -893,13 +889,17 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Unidad eliminada exitosamente']);
     exit();
 }
 
-// Error crítico de red
 if ($curlError) {
     debugLogUnidades("Error cURL Crítico: " . $curlError);
     echo json_encode(['success' => false, 'message' => 'Error de conexión con Hermes.', 'error' => $curlError]);
@@ -908,7 +908,6 @@ if ($curlError) {
 
 $decodedResponse = json_decode($response, true);
 
-// Manejo de Error 409 (Conflicto Relacional DB - Restricción FK)
 if ($httpCode === 409) {
     echo json_encode([
         'success' => false,
@@ -919,7 +918,6 @@ if ($httpCode === 409) {
     exit();
 }
 
-// Respuesta Estándar de la API
 echo json_encode([
     'success' => ($httpCode >= 200 && $httpCode < 300),
     'http_code' => $httpCode,
@@ -999,6 +997,15 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
+
+// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    session_destroy();
+}
+// ------------------
 
 // 4. Manejo de Errores de Red
 if ($curlError) {
@@ -2862,6 +2869,15 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
+// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    session_destroy();
+}
+// ------------------
+
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Eliminado exitosamente']);
@@ -2899,9 +2915,9 @@ Archivo: ./ajax_equivalencias.php
 <?php
 // Nombre del archivo: ajax_equivalencias.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful aislado para gestionar el CRUD de las Equivalencias de Unidades asignadas a los Alimentos.
+// Fecha: 2026-06-01
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -2916,9 +2932,8 @@ function debugLogEquivalencias($message) {
 
 header('Content-Type: application/json; charset=utf-8');
 
-// Validación de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado.']);
     exit();
 }
 
@@ -2933,7 +2948,6 @@ if (empty($id_alimento)) {
     exit();
 }
 
-// URL base de Hermes para este dominio
 $apiUrl = 'https://api.caloritrack.com/admin/alimentos/' . urlencode($id_alimento) . '/equivalencias';
 
 $ch = curl_init();
@@ -2955,9 +2969,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { 
-        echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para actualizar.']); exit(); 
-    }
+    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para actualizar.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
@@ -2965,9 +2977,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { 
-        echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para eliminar.']); exit(); 
-    }
+    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para eliminar.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -2985,7 +2995,12 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// Eliminar exitoso (200 OK según la doc de Hermes)
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 200 && $action === 'delete') {
     echo json_encode(['success' => true, 'message' => 'Equivalencia eliminada correctamente.']);
     exit();
@@ -2999,7 +3014,6 @@ if ($curlError) {
 
 $decodedResponse = json_decode($response, true);
 
-// Manejo de Error 409: La unidad ya está asignada al alimento (Conflicto)
 if ($httpCode === 409) {
     echo json_encode([
         'success' => false,
@@ -3020,13 +3034,12 @@ Archivo: ./ajax_planes_v2.php
 <?php
 // Nombre del archivo: ajax_planes_v2.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-25
-// Versión: 1.5
-// Descripción: Controlador Proxy RESTful aislado. Se eliminó el "Filtro Purificador" que corrompía el JSON y se restauró la cabecera Content-Length para garantizar compatibilidad con el body-parser de Hermes.
+// Fecha: 2026-06-01
+// Versión: 1.6
+// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
-// Sistema de logs aislados para depuración de la V2
 function debugLogPlanesV2($message) {
     $logDir = __DIR__ . '/logs';
     if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
@@ -3040,7 +3053,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -3049,7 +3062,6 @@ $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 $id = trim($_GET['id'] ?? '');
 
-// Apuntamos al nuevo endpoint V2
 $apiUrl = 'https://api.caloritrack.com/admin/planes-v2';
 
 $ch = curl_init();
@@ -3080,10 +3092,7 @@ elseif ($action === 'get' && $method === 'GET') {
 } 
 elseif ($action === 'create' && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
-    
-    // KR-FIX: Calculamos y enviamos la longitud exacta para evitar que Node.js rechace el JSON
     $headers[] = 'Content-Length: ' . strlen($rawInput);
-
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput); 
@@ -3091,17 +3100,13 @@ elseif ($action === 'create' && $method === 'POST') {
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
-    
-    // KR-FIX: También en PUT para mantener la integridad de actualización
     $headers[] = 'Content-Length: ' . strlen($rawInput);
-
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
-    
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -3110,7 +3115,6 @@ else {
     exit();
 }
 
-// Configuración Base cURL
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
@@ -3121,13 +3125,17 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
-// Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Plan V2 eliminado exitosamente']);
     exit();
 }
 
-// Error crítico de red
 if ($curlError) {
     debugLogPlanesV2("Error cURL Crítico: " . $curlError);
     echo json_encode(['success' => false, 'message' => 'Error de conexión con Hermes.', 'error' => $curlError]);
@@ -3136,7 +3144,6 @@ if ($curlError) {
 
 $decodedResponse = json_decode($response, true);
 
-// KR-FIX: Revelar el mensaje REAL de Hermes si revienta con un 500
 if ($httpCode >= 500) {
     $hermesExactError = $decodedResponse['message'] ?? $decodedResponse['error'] ?? 'No se especificó la causa exacta en Node.';
     debugLogPlanesV2("CRASHEO HERMES 500: " . $response);
@@ -3149,7 +3156,6 @@ if ($httpCode >= 500) {
     exit();
 }
 
-// Manejo de Error 409 (Conflicto)
 if ($httpCode === 409) {
     echo json_encode([
         'success' => false,
@@ -3160,7 +3166,6 @@ if ($httpCode === 409) {
     exit();
 }
 
-// Respuesta Estándar
 echo json_encode([
     'success' => ($httpCode >= 200 && $httpCode < 300),
     'http_code' => $httpCode,
@@ -3214,6 +3219,15 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
 
+// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    session_destroy();
+}
+// ------------------
+
 // Verificamos si hubo un error a nivel de red o de HTTP
 if ($error || $httpCode !== 200) {
     $decoded = json_decode($response, true);
@@ -3250,9 +3264,9 @@ Archivo: ./ajax_analytics.php
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 1.14
-// Descripción: Controlador AJAX proxy seguro. Se agregó la ruta 'sessions_detail' para consumir el nuevo endpoint de Hermes que devuelve el listado detallado de sesiones individuales.
+// Fecha: 2026-06-01
+// Versión: 1.15
+// Descripción: Controlador AJAX proxy seguro. Se agregó inyección del http_code en la raíz de los errores y se destruye la sesión PHP si Hermes arroja un 401 por expiración.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -3284,7 +3298,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
 // Verificamos que el héroe esté autenticado
 if (!isset($_SESSION['user_token'])) {
     debugLog("Error: Intento de acceso sin token de sesión activo.");
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Inicie sesión nuevamente.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Inicie sesión nuevamente.']);
     exit();
 }
 
@@ -3364,8 +3378,15 @@ debugLog("Código HTTP recibido: " . $httpCode);
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
     debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    
+    // KRILLIN FIX: Si Hermes nos batea por token caducado (401), destruimos la sesión de PHP de una vez
+    if ($httpCode === 401) {
+        session_destroy();
+    }
+
     echo json_encode([
         'success' => false, 
+        'http_code' => $httpCode, // <-- Lo ponemos en la raíz para que el interceptor del frontend lo caché fácil
         'message' => 'Error al conectar con los servidores de Hermes.',
         'debug' => ['error' => $error, 'http_code' => $httpCode]
     ]);
@@ -4141,15 +4162,15 @@ Archivo: ./includes/session.php
 <?php
 // Nombre del archivo: session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 2.1
-// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia.
+// Fecha: 2026-06-01
+// Versión: 2.2
+// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia. ADEMÁS: Se integró validación profunda del token JWT de Hermes para desconexión automática al expirar.
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
 $segundos_sesion = 60 * 60 * 24 * $dias_sesion;
 
-// KRILLIN FIX: Aislamos las sesiones en una carpeta propia dentro de 'includes'
+// Aislamos las sesiones en una carpeta propia dentro de 'includes'
 // para que el cron de limpieza nocturno del servidor no nos las elimine.
 $session_path = __DIR__ . '/sessions_data';
 if (!is_dir($session_path)) {
@@ -4193,14 +4214,63 @@ if (isset($_COOKIE[session_name()])) {
         true
     );
 }
+
+// =====================================================================
+// 5. [KRILLIN FIX] EL CERBERO DE PHP: Validación del Token JWT
+// =====================================================================
+if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
+    $tokenParts = explode('.', $_SESSION['user_token']);
+
+    // Un JWT válido siempre tiene 3 partes separadas por puntos
+    if (count($tokenParts) === 3) {
+        // Decodificamos el payload (reemplazamos caracteres de Base64Url a Base64 normal por seguridad)
+        $base64 = str_replace(['-', '_'], ['+', '/'], $tokenParts[1]);
+        $payload = json_decode(base64_decode($base64), true);
+        
+        // Verificamos si el JWT tiene fecha de caducidad
+        if (isset($payload['exp'])) {
+            $fechaCaducidad = $payload['exp'];
+            
+            // Validamos si la fecha actual ya superó la de caducidad
+            // (Le damos 5 segundos de margen por desface de relojes de servidores)
+            if (time() >= ($fechaCaducidad - 5)) { 
+                
+                // ¡El token ya valió! Matamos la sesión desde el origen
+                session_unset();
+                session_destroy();
+                
+                // Borramos la cookie de la sesión
+                if (isset($_COOKIE[session_name()])) {
+                    setcookie(session_name(), '', time() - 3600, '/');
+                }
+                
+                // Detectar si la petición que disparó esto es AJAX/Fetch o una navegación de página normal
+                $isAjax = (!empty($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') || 
+                          (isset($_SERVER['HTTP_ACCEPT']) && strpos($_SERVER['HTTP_ACCEPT'], 'application/json') !== false);
+                
+                if ($isAjax) {
+                    // Si es un AJAX, le devolvemos un 401 para que el Javascript del <head> levante el modal chulo
+                    header('Content-Type: application/json');
+                    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'Sesión expirada.']);
+                    exit();
+                } else {
+                    // Si diste clic a una opción del menú y era navegación normal, te manda a logout
+                    // Asumimos que tienes un logout.php que redirige al login final
+                    header("Location: logout.php");
+                    exit();
+                }
+            }
+        }
+    }
+}
 ?>-----
 Archivo: ./includes/header.php
 <?php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-09
-// Versión: 1.7
-// Descripción: Cabecera global. Se agregó el favicon logo-white.png para la pestaña del navegador. Se añadió una regla CSS (.sidebar-collapsed .submenu) para esconder completamente los submenús cuando el panel lateral se colapsa, evitando el desbordamiento de texto.
+// Fecha: 2026-06-01
+// Versión: 1.8
+// Descripción: Cabecera global. Se agregó un interceptor de Fetch global con Javascript para detectar expiración de sesión (401) y redirigir con un modal elegante.
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
@@ -4255,6 +4325,92 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
         } else {
             document.documentElement.classList.remove('dark');
         }
+    </script>
+
+    <script>
+        // [KRILLIN] Cerbero Interceptor (Fetch + XHR + jQuery)
+        // Función centralizada para disparar el modal con estilo
+        function triggerSessionExpiredModal() {
+            // Si el modal ya existe, no hacemos nada para evitar duplicados en la pantalla
+            if (document.getElementById('session-expired-modal')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'session-expired-modal';
+            overlay.className = 'fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in';
+            overlay.innerHTML = `
+                <div class="bg-white dark:bg-darkbase-900 border border-red-500/50 w-full max-w-sm rounded-3xl p-8 shadow-2xl text-center flex flex-col items-center">
+                    <div class="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mb-4">
+                        <i class="ph ph-clock-countdown text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Sesión Terminada</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">Tu conexión con la base de datos caducó por seguridad. Te mandaremos al login en un momento.</p>
+                    <i class="ph ph-spinner animate-spin text-3xl text-calori-600"></i>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            
+            // Mandamos al usuario al logout que se encargará de matar todo
+            setTimeout(() => {
+                window.location.href = 'logout.php';
+            }, 2500);
+        }
+
+        // CABEZA 1: Interceptor para Fetch API
+        const originalFetch = window.fetch;
+        window.fetch = async function() {
+            try {
+                const response = await originalFetch.apply(this, arguments);
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const clone = response.clone();
+                    try {
+                        const data = await clone.json();
+                        if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                            triggerSessionExpiredModal();
+                            return new Promise(() => {}); // Detenemos la vista
+                        }
+                    } catch (e) {}
+                }
+                return response;
+            } catch (error) {
+                throw error;
+            }
+        };
+
+        // CABEZA 2: Interceptor para XMLHttpRequest (Esto atrapa Axios y llamadas nativas viejas)
+        const originalXhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function() {
+            this.addEventListener('load', function() {
+                try {
+                    const contentType = this.getResponseHeader("content-type");
+                    if (contentType && contentType.includes("application/json")) {
+                        const data = JSON.parse(this.responseText);
+                        if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                            triggerSessionExpiredModal();
+                        }
+                    }
+                } catch (e) {}
+            });
+            originalXhrOpen.apply(this, arguments);
+        };
+
+        // CABEZA 3: Respaldo para jQuery (Atrapa DataTables y $.ajax)
+        document.addEventListener("DOMContentLoaded", function() {
+            if (typeof jQuery !== 'undefined') {
+                jQuery(document).ajaxComplete(function(event, xhr, settings) {
+                    try {
+                        // Verificamos si la respuesta es JSON antes de parsear
+                        const contentType = xhr.getResponseHeader("content-type");
+                        if (contentType && contentType.includes("application/json")) {
+                            const data = JSON.parse(xhr.responseText);
+                            if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                                triggerSessionExpiredModal();
+                            }
+                        }
+                    } catch (e) {}
+                });
+            }
+        });
     </script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
@@ -4935,9 +5091,9 @@ Archivo: ./ajax_legal.php
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 2.6
-// Descripción: Controlador Proxy para Bóveda Legal. Se agregó un bloqueador estricto para evitar peticiones a Hermes si el ID recibido no es válido o viene como "undefined". 
+// Fecha: 2026-06-01
+// Versión: 2.7
+// Descripción: Controlador Proxy para Bóveda Legal. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -4953,7 +5109,7 @@ function debugLog($message) {
 header('Content-Type: application/json; charset=utf-8');
 
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado.']);
     exit();
 }
 
@@ -4962,8 +5118,6 @@ $method = $_SERVER['REQUEST_METHOD'];
 $action = $_GET['action'] ?? '';
 $docId = trim($_GET['id'] ?? '');
 
-// KRILLIN FIX: Bloqueador de seguridad. Si el Front-End no manda un UUID real, cortamos la comunicación
-// para no bombardear a Hermes con peticiones que darán error 404 de todos modos.
 if ($action === 'activate' || $action === 'delete') {
     if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''])) {
         echo json_encode([
@@ -4977,9 +5131,6 @@ if ($action === 'activate' || $action === 'delete') {
 
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
-// --------------------------------------------------------------------------------------
-// GENERADOR DE HASH SHA-256
-// --------------------------------------------------------------------------------------
 if ($action === 'generate_hash' && $method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
     $pdfUrl = $input['url'] ?? '';
@@ -5001,11 +5152,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     exit(); 
 }
 
-// --------------------------------------------------------------------------------------
-// COMUNICACIÓN CON HERMES (API)
-// --------------------------------------------------------------------------------------
 $ch = curl_init();
-
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
@@ -5018,26 +5165,20 @@ if ($action === 'list' && $method === 'GET') {
 elseif ($action === 'create' && $method === 'POST') {
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
-
     curl_setopt($ch, CURLOPT_URL, $apiUrl);
     curl_setopt($ch, CURLOPT_POST, true);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
-    debugLog("Enviando petición de creación a Hermes con URLs limpias.");
 } 
 elseif ($action === 'activate' && ($method === 'PUT' || $method === 'POST')) {
     $input = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($input);
-    
-    // Manda exactamente la URL como en Postman
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId) . '/activate');
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, $method);
     curl_setopt($ch, CURLOPT_POSTFIELDS, $input);
-    debugLog("Enviando $method de activación a Hermes para UUID: $docId");
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($docId));
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, "DELETE"); 
-    debugLog("Enviando DELETE a Hermes para UUID: $docId");
 } 
 else {
     echo json_encode(['success' => false, 'message' => 'Acción no soportada.']);
@@ -5052,12 +5193,18 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 curl_close($ch);
 
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204]);
     exit();
 }
 
-if ($httpCode >= 400) { debugLog("ERROR API ($httpCode): $response"); }
+if ($httpCode >= 400 && $httpCode !== 401) { debugLog("ERROR API ($httpCode): $response"); }
 
 echo json_encode([
     'success' => ($httpCode >= 200 && $httpCode < 300),
@@ -8445,9 +8592,9 @@ Archivo: ./ajax_alimentos.php
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-29
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Alimentos comunicándose con la API de Hermes. Se agregó soporte para reenviar el parámetro opcional es_publico a Hermes.
+// Fecha: 2026-06-01
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401 (Token expirado).
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -8465,7 +8612,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -8541,6 +8688,12 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
+
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Eliminado exitosamente']);
@@ -8578,9 +8731,9 @@ Archivo: ./ajax_dietas.php
 <?php
 // Nombre del archivo: ajax_dietas.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Dietas. Se añadió el endpoint para recuperar platillos asignados a una dieta.
+// Fecha: 2026-06-01
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para Dietas. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -8598,7 +8751,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -8634,7 +8787,6 @@ elseif ($action === 'get' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
-// NUEVO: Consultar platillos asignados a la dieta
 elseif ($action === 'get_platillos' && $method === 'GET') {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id . '/platillos');
@@ -8674,6 +8826,12 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
+
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
 
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {

@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_dietas.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para gestionar el CRUD del Catálogo Maestro de Dietas. Se añadió el endpoint para recuperar platillos asignados a una dieta.
+// Fecha: 2026-06-01
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para Dietas. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -21,7 +21,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -57,7 +57,6 @@ elseif ($action === 'get' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
-// NUEVO: Consultar platillos asignados a la dieta
 elseif ($action === 'get_platillos' && $method === 'GET') {
     if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id . '/platillos');
@@ -97,6 +96,12 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
+
+// KRILLIN FIX: Protección global contra sesiones caducadas en Hermes
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) { session_start(); }
+    session_destroy();
+}
 
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {

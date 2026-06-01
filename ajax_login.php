@@ -44,6 +44,15 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
 
+// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    session_destroy();
+}
+// ------------------
+
 // Verificamos si hubo un error a nivel de red o de HTTP
 if ($error || $httpCode !== 200) {
     $decoded = json_decode($response, true);

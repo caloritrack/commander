@@ -92,6 +92,15 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $curlError = curl_error($ch);
 curl_close($ch);
 
+// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
+if ($httpCode === 401) {
+    if (session_status() === PHP_SESSION_NONE) {
+        session_start();
+    }
+    session_destroy();
+}
+// ------------------
+
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {
     echo json_encode(['success' => true, 'http_code' => 204, 'message' => 'Eliminado exitosamente']);

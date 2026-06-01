@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-09
-// Versión: 1.7
-// Descripción: Cabecera global. Se agregó el favicon logo-white.png para la pestaña del navegador. Se añadió una regla CSS (.sidebar-collapsed .submenu) para esconder completamente los submenús cuando el panel lateral se colapsa, evitando el desbordamiento de texto.
+// Fecha: 2026-06-01
+// Versión: 1.8
+// Descripción: Cabecera global. Se agregó un interceptor de Fetch global con Javascript para detectar expiración de sesión (401) y redirigir con un modal elegante.
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
@@ -58,6 +58,92 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
         } else {
             document.documentElement.classList.remove('dark');
         }
+    </script>
+
+    <script>
+        // [KRILLIN] Cerbero Interceptor (Fetch + XHR + jQuery)
+        // Función centralizada para disparar el modal con estilo
+        function triggerSessionExpiredModal() {
+            // Si el modal ya existe, no hacemos nada para evitar duplicados en la pantalla
+            if (document.getElementById('session-expired-modal')) return;
+
+            const overlay = document.createElement('div');
+            overlay.id = 'session-expired-modal';
+            overlay.className = 'fixed inset-0 z-[9999] bg-black/80 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in';
+            overlay.innerHTML = `
+                <div class="bg-white dark:bg-darkbase-900 border border-red-500/50 w-full max-w-sm rounded-3xl p-8 shadow-2xl text-center flex flex-col items-center">
+                    <div class="w-16 h-16 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-2xl flex items-center justify-center mb-4">
+                        <i class="ph ph-clock-countdown text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold text-gray-900 dark:text-white mb-2">Sesión Terminada</h3>
+                    <p class="text-sm text-gray-500 dark:text-gray-400 mb-6">Tu conexión con la base de datos caducó por seguridad. Te mandaremos al login en un momento.</p>
+                    <i class="ph ph-spinner animate-spin text-3xl text-calori-600"></i>
+                </div>
+            `;
+            document.body.appendChild(overlay);
+            
+            // Mandamos al usuario al logout que se encargará de matar todo
+            setTimeout(() => {
+                window.location.href = 'logout.php';
+            }, 2500);
+        }
+
+        // CABEZA 1: Interceptor para Fetch API
+        const originalFetch = window.fetch;
+        window.fetch = async function() {
+            try {
+                const response = await originalFetch.apply(this, arguments);
+                const contentType = response.headers.get("content-type");
+                if (contentType && contentType.includes("application/json")) {
+                    const clone = response.clone();
+                    try {
+                        const data = await clone.json();
+                        if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                            triggerSessionExpiredModal();
+                            return new Promise(() => {}); // Detenemos la vista
+                        }
+                    } catch (e) {}
+                }
+                return response;
+            } catch (error) {
+                throw error;
+            }
+        };
+
+        // CABEZA 2: Interceptor para XMLHttpRequest (Esto atrapa Axios y llamadas nativas viejas)
+        const originalXhrOpen = XMLHttpRequest.prototype.open;
+        XMLHttpRequest.prototype.open = function() {
+            this.addEventListener('load', function() {
+                try {
+                    const contentType = this.getResponseHeader("content-type");
+                    if (contentType && contentType.includes("application/json")) {
+                        const data = JSON.parse(this.responseText);
+                        if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                            triggerSessionExpiredModal();
+                        }
+                    }
+                } catch (e) {}
+            });
+            originalXhrOpen.apply(this, arguments);
+        };
+
+        // CABEZA 3: Respaldo para jQuery (Atrapa DataTables y $.ajax)
+        document.addEventListener("DOMContentLoaded", function() {
+            if (typeof jQuery !== 'undefined') {
+                jQuery(document).ajaxComplete(function(event, xhr, settings) {
+                    try {
+                        // Verificamos si la respuesta es JSON antes de parsear
+                        const contentType = xhr.getResponseHeader("content-type");
+                        if (contentType && contentType.includes("application/json")) {
+                            const data = JSON.parse(xhr.responseText);
+                            if (data && (data.http_code === 401 || (data.debug && data.debug.http_code === 401))) {
+                                triggerSessionExpiredModal();
+                            }
+                        }
+                    } catch (e) {}
+                });
+            }
+        });
     </script>
     <script src="https://unpkg.com/@phosphor-icons/web"></script>
     <style>
