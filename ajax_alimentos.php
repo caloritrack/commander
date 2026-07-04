@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.2
-// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401 (Token expirado).
+// Fecha: 2026-07-04
+// Versión: 1.3
+// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se incorporó el token del WAF de Cloudflare en los headers.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -36,7 +36,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO

@@ -22,6 +22,7 @@ Estructura de carpetas y archivos:
 |____dashboard_growth.php
 |____dietas_catalog.php
 |____includes
+| |____api_security.php
 | |____auth_protect.php
 | |____footer.php
 | |____header.php
@@ -810,9 +811,9 @@ Archivo: ./ajax_unidades.php
 <?php
 // Nombre del archivo: ajax_unidades.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se inyectó la validación del WAF de Cloudflare para las cabeceras HTTP.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -843,7 +844,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 if ($action === 'list' && $method === 'GET') {
@@ -941,9 +943,9 @@ Archivo: ./ajax_upload.php
 <?php
 // Nombre del archivo: ajax_upload.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-27
-// Versión: 1.1
-// Descripción: Controlador Proxy para recibir imágenes comprimidas desde el frontend (WebP) y subirlas a la API de Hermes. Se corrigió el error 404 restaurando el endpoint correcto (/admin/upload-image).
+// Fecha: 2026-07-04
+// Versión: 1.2
+// Descripción: Controlador Proxy para subir imágenes. Se añadió la cabecera x-calori-token para autorizar la petición a través de Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -989,7 +991,8 @@ curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer ' . $token
+    'Authorization: Bearer ' . $token,
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
@@ -2778,9 +2781,9 @@ Archivo: ./ajax_platillos.php
 <?php
 // Nombre del archivo: ajax_platillos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful aislado para gestionar el CRUD del Catálogo Maestro de Platillos comunicándose con la API de Hermes.
+// Fecha: 2026-07-04
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful aislado para gestionar Platillos. Modificado para inyectar token de WAF Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -2813,7 +2816,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO
@@ -2915,9 +2919,9 @@ Archivo: ./ajax_equivalencias.php
 <?php
 // Nombre del archivo: ajax_equivalencias.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Integración limpia del x-calori-token.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -2954,7 +2958,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 if ($action === 'list' && $method === 'GET') {
@@ -3034,9 +3039,9 @@ Archivo: ./ajax_planes_v2.php
 <?php
 // Nombre del archivo: ajax_planes_v2.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.6
-// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.7
+// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Implementación del header de WAF Cloudflare superada con éxito.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -3069,7 +3074,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO
@@ -3176,9 +3182,9 @@ Archivo: ./ajax_login.php
 <?php
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.2
-// Descripción: Controlador AJAX para login. Se corrigió el mapeo de la respuesta de Hermes para leer correctamente 'access_token' en lugar de 'token'.
+// Fecha: 2026-07-04
+// Versión: 1.3
+// Descripción: Controlador AJAX para login. Se integró el header x-calori-token para sortear el WAF de Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -3211,7 +3217,8 @@ curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Content-Type: application/json',
-    'Accept: application/json'
+    'Accept: application/json',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 
 $response = curl_exec($ch);
@@ -3264,9 +3271,9 @@ Archivo: ./ajax_analytics.php
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.15
-// Descripción: Controlador AJAX proxy seguro. Se agregó inyección del http_code en la raíz de los errores y se destruye la sesión PHP si Hermes arroja un 401 por expiración.
+// Fecha: 2026-07-04
+// Versión: 1.16
+// Descripción: Controlador AJAX proxy seguro. Se inyectó el header WAF de Cloudflare para asegurar el flujo de la telemetría.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -3365,7 +3372,8 @@ $ch = curl_init($fullUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
-    'Accept: application/json'
+    'Accept: application/json',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 
 $response = curl_exec($ch);
@@ -4162,9 +4170,12 @@ Archivo: ./includes/session.php
 <?php
 // Nombre del archivo: session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 2.2
-// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia. ADEMÁS: Se integró validación profunda del token JWT de Hermes para desconexión automática al expirar.
+// Fecha: 2026-07-04
+// Versión: 2.3
+// Descripción: Inicialización centralizada de sesiones para Commander. Se incluyó el nuevo archivo api_security.php para cargar las credenciales del WAF de Cloudflare de forma global.
+
+// Cargamos la configuración de seguridad de la API (WAF)
+require_once __DIR__ . '/api_security.php';
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
@@ -4684,6 +4695,18 @@ $current_page = basename($_SERVER['PHP_SELF']);
             </div>
         </div>
     </aside>-----
+Archivo: ./includes/api_security.php
+<?php
+// Nombre del archivo: includes/api_security.php
+// Autor: Arturo Enriquez Betancourt con Krillin
+// Fecha: 2026-07-04
+// Versión: 1.0
+// Descripción: Módulo seguro para almacenar claves y tokens de la API, separando esta lógica para mantener el código modular.
+
+// ¡AQUÍ VA LA CONTRASEÑA DEL HEADER, ARTURO!
+// Reemplaza el valor con la cadena completa que configuraste en Cloudflare
+define('CALORI_WAF_TOKEN', '6P6^Wu,lHE,ut1;-R&>&');
+?>-----
 Archivo: ./unidades_catalog.php
 <?php
 // Nombre del archivo: unidades_catalog.php
@@ -5091,9 +5114,9 @@ Archivo: ./ajax_legal.php
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 2.7
-// Descripción: Controlador Proxy para Bóveda Legal. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 2.8
+// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF implementado para interactuar seguro con el API.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -5136,6 +5159,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     $pdfUrl = $input['url'] ?? '';
     if (empty($pdfUrl)) { echo json_encode(['success' => false]); exit(); }
 
+    // En esta llamada no mandamos token WAF porque es para descargar de un bucket R2 o link público externo
     $chPdf = curl_init($pdfUrl);
     curl_setopt($chPdf, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($chPdf, CURLOPT_FOLLOWLOCATION, true);
@@ -5156,7 +5180,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 if ($action === 'list' && $method === 'GET') {
@@ -8592,9 +8617,9 @@ Archivo: ./ajax_alimentos.php
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.2
-// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401 (Token expirado).
+// Fecha: 2026-07-04
+// Versión: 1.3
+// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se incorporó el token del WAF de Cloudflare en los headers.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -8627,7 +8652,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO
@@ -8731,9 +8757,9 @@ Archivo: ./ajax_dietas.php
 <?php
 // Nombre del archivo: ajax_dietas.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.2
-// Descripción: Controlador Proxy RESTful para Dietas. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.3
+// Descripción: Controlador Proxy RESTful para Dietas. Se actualizó el listado de headers para incluir el pase del WAF de Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -8766,7 +8792,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO

@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.15
-// Descripción: Controlador AJAX proxy seguro. Se agregó inyección del http_code en la raíz de los errores y se destruye la sesión PHP si Hermes arroja un 401 por expiración.
+// Fecha: 2026-07-04
+// Versión: 1.16
+// Descripción: Controlador AJAX proxy seguro. Se inyectó el header WAF de Cloudflare para asegurar el flujo de la telemetría.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -102,7 +102,8 @@ $ch = curl_init($fullUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
-    'Accept: application/json'
+    'Accept: application/json',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 
 $response = curl_exec($ch);

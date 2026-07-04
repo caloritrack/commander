@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_planes_v2.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.6
-// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.7
+// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Implementación del header de WAF Cloudflare superada con éxito.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -36,7 +36,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO

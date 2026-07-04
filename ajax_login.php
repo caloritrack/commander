@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-08
-// Versión: 1.2
-// Descripción: Controlador AJAX para login. Se corrigió el mapeo de la respuesta de Hermes para leer correctamente 'access_token' en lugar de 'token'.
+// Fecha: 2026-07-04
+// Versión: 1.3
+// Descripción: Controlador AJAX para login. Se integró el header x-calori-token para sortear el WAF de Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -36,7 +36,8 @@ curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Content-Type: application/json',
-    'Accept: application/json'
+    'Accept: application/json',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 
 $response = curl_exec($ch);

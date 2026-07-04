@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_platillos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-23
-// Versión: 1.0
-// Descripción: Controlador Proxy RESTful aislado para gestionar el CRUD del Catálogo Maestro de Platillos comunicándose con la API de Hermes.
+// Fecha: 2026-07-04
+// Versión: 1.1
+// Descripción: Controlador Proxy RESTful aislado para gestionar Platillos. Modificado para inyectar token de WAF Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -36,7 +36,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 // ENRUTADOR DINÁMICO

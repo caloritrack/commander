@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 2.7
-// Descripción: Controlador Proxy para Bóveda Legal. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 2.8
+// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF implementado para interactuar seguro con el API.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -46,6 +46,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     $pdfUrl = $input['url'] ?? '';
     if (empty($pdfUrl)) { echo json_encode(['success' => false]); exit(); }
 
+    // En esta llamada no mandamos token WAF porque es para descargar de un bucket R2 o link público externo
     $chPdf = curl_init($pdfUrl);
     curl_setopt($chPdf, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($chPdf, CURLOPT_FOLLOWLOCATION, true);
@@ -66,7 +67,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 if ($action === 'list' && $method === 'GET') {

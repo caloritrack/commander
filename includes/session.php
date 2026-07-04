@@ -1,9 +1,12 @@
 <?php
 // Nombre del archivo: session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 2.2
-// Descripción: Inicialización centralizada de sesiones para Commander. Se implementó una ruta local aislada de almacenamiento de sesiones ('sessions_data') para evitar que el Garbage Collector del servidor (AlmaLinux/CyberPanel) elimine las sesiones durante la madrugada. Se configuró a PHP para auto-gestionar la limpieza respetando los 60 días de vigencia. ADEMÁS: Se integró validación profunda del token JWT de Hermes para desconexión automática al expirar.
+// Fecha: 2026-07-04
+// Versión: 2.3
+// Descripción: Inicialización centralizada de sesiones para Commander. Se incluyó el nuevo archivo api_security.php para cargar las credenciales del WAF de Cloudflare de forma global.
+
+// Cargamos la configuración de seguridad de la API (WAF)
+require_once __DIR__ . '/api_security.php';
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;

@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_unidades.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se integró la protección global que destruye la sesión PHP si Hermes devuelve un error 401.
+// Fecha: 2026-07-04
+// Versión: 1.2
+// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se inyectó la validación del WAF de Cloudflare para las cabeceras HTTP.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -34,7 +34,8 @@ $ch = curl_init();
 $headers = [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
-    'Content-Type: application/json; charset=utf-8'
+    'Content-Type: application/json; charset=utf-8',
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ];
 
 if ($action === 'list' && $method === 'GET') {

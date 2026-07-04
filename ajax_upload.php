@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_upload.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-27
-// Versión: 1.1
-// Descripción: Controlador Proxy para recibir imágenes comprimidas desde el frontend (WebP) y subirlas a la API de Hermes. Se corrigió el error 404 restaurando el endpoint correcto (/admin/upload-image).
+// Fecha: 2026-07-04
+// Versión: 1.2
+// Descripción: Controlador Proxy para subir imágenes. Se añadió la cabecera x-calori-token para autorizar la petición a través de Cloudflare.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -49,7 +49,8 @@ curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $postData);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
-    'Authorization: Bearer ' . $token
+    'Authorization: Bearer ' . $token,
+    'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
 curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
 
