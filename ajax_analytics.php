@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.16
-// Descripción: Controlador AJAX proxy seguro. Se inyectó el header WAF de Cloudflare para asegurar el flujo de la telemetría.
+// Fecha: 2026-07-22
+// Versión: 1.17
+// Descripción: Controlador AJAX proxy seguro. Se agregó la nueva acción 'funnel_onboarding' para consumir el embudo de conversión estricto pre-calculado por MariaDB.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -66,6 +66,9 @@ if ($action === 'kpis') {
     $eventName = $_GET['eventName'] ?? '';
     $metadataKey = $_GET['metadataKey'] ?? '';
     $endpoint = "/admin/analytics/events/metadata?eventName={$eventName}&metadataKey={$metadataKey}&startDate={$startDate}&endDate={$endDate}";
+} elseif ($action === 'funnel_onboarding') {
+    // NUEVO: Endpoint estricto para el embudo de conversión pre-calculado
+    $endpoint = "/admin/analytics/funnel/onboarding?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'schema') {
     $endpoint = "/admin/analytics/schema";
 } elseif ($action === 'subscriptions') {
@@ -81,7 +84,6 @@ if ($action === 'kpis') {
 } elseif ($action === 'top_events') {
     $endpoint = "/admin/analytics/events/top?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'sessions_detail') {
-    // NUEVO: Endpoint directo a Hermes para el reporte desglosado de sesiones
     $endpoint = "/admin/analytics/sessions/detail?startDate={$startDate}&endDate={$endDate}&page={$page}";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");

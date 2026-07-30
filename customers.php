@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: customers.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 2.4
-// Descripción: Se modificó la columna de Nacimiento para mostrar la Edad calculada dinámicamente al día actual. Se reemplazó el valor numérico del IMC por su categoría médica (Bajo peso, Normal, Sobrepeso, Obesidad) calculada en tiempo real a partir del peso y la estatura, implementando colores semánticos para facilitar su lectura. Adicionalmente, se actualizó la función parseLocale para soportar códigos de región separados tanto por guión bajo (_) como por guión medio (-).
+// Fecha: 2026-07-22
+// Versión: 2.5
+// Descripción: Se dividió la métrica de uso en dos columnas ("Último Login" y "Última Apertura") consumiendo los nuevos campos fecha_ultimo_login y fecha_ultima_apertura expuestos por la API de Hermes. Esto permite analizar el DAU recurrente vs el login explícito.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -277,6 +277,10 @@ ob_start();
                         const subInicio = formatDate(user.subscription_started_at);
                         const subFin = formatDate(user.subscription_expires_at);
 
+                        // Nuevos Datos de Actividad y Fallback de Legado
+                        const dataUltimoLogin = user.fecha_ultimo_login ? formatDate(user.fecha_ultimo_login) : (user.ultima_sesion ? formatDate(user.ultima_sesion) : '<span class="text-gray-400">-</span>');
+                        const dataUltimaApertura = user.fecha_ultima_apertura ? formatDate(user.fecha_ultima_apertura) : '<span class="text-gray-400">-</span>';
+
                         // Identificar si el registro está incompleto para pintar toda la fila gris
                         const isRegistroIncompleto = !user.genero && !user.fecha_nacimiento && !user.lenguaje_preferido;
                         const rowCssClass = isRegistroIncompleto 
@@ -339,18 +343,20 @@ ob_start();
                                 
                                 <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${formatDate(user.fecha_registro)}</td>
                                 
-                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${formatDate(user.ultima_sesion)}</td>
+                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${dataUltimoLogin}</td>
+
+                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${dataUltimaApertura}</td>
                             </tr>
                         `;
                     });
                     
                     tbody.innerHTML = html;
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-red-500">No se pudieron cargar los datos.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="15" class="text-center py-8 text-red-500">No se pudieron cargar los datos.</td></tr>`;
                 }
             } catch (error) {
                 console.error("Error al cargar clientes:", error);
-                tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-red-500">Error de conexión.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center py-8 text-red-500">Error de conexión.</td></tr>`;
             } finally {
                 loader.classList.add('hidden');
                 tableCont.classList.remove('hidden');
@@ -452,6 +458,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Estado</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Registro</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Último Login</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Última Apertura</th>
                             </tr>
                         </thead>
                         <tbody id="customersTableBody" class="divide-y divide-gray-100 dark:divide-gray-800">

@@ -3271,9 +3271,9 @@ Archivo: ./ajax_analytics.php
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.16
-// Descripción: Controlador AJAX proxy seguro. Se inyectó el header WAF de Cloudflare para asegurar el flujo de la telemetría.
+// Fecha: 2026-07-22
+// Versión: 1.17
+// Descripción: Controlador AJAX proxy seguro. Se agregó la nueva acción 'funnel_onboarding' para consumir el embudo de conversión estricto pre-calculado por MariaDB.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -3336,6 +3336,9 @@ if ($action === 'kpis') {
     $eventName = $_GET['eventName'] ?? '';
     $metadataKey = $_GET['metadataKey'] ?? '';
     $endpoint = "/admin/analytics/events/metadata?eventName={$eventName}&metadataKey={$metadataKey}&startDate={$startDate}&endDate={$endDate}";
+} elseif ($action === 'funnel_onboarding') {
+    // NUEVO: Endpoint estricto para el embudo de conversión pre-calculado
+    $endpoint = "/admin/analytics/funnel/onboarding?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'schema') {
     $endpoint = "/admin/analytics/schema";
 } elseif ($action === 'subscriptions') {
@@ -3351,7 +3354,6 @@ if ($action === 'kpis') {
 } elseif ($action === 'top_events') {
     $endpoint = "/admin/analytics/events/top?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'sessions_detail') {
-    // NUEVO: Endpoint directo a Hermes para el reporte desglosado de sesiones
     $endpoint = "/admin/analytics/sessions/detail?startDate={$startDate}&endDate={$endDate}&page={$page}";
 } else {
     debugLog("Error: Acción inválida solicitada ('$action')");
@@ -6532,9 +6534,9 @@ Archivo: ./dashboard_growth.php
 <?php
 // Nombre del archivo: dashboard_growth.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-16
-// Versión: 1.4
-// Descripción: Se actualizó la llamada de la tarjeta "Top 10 Eventos" para usar la nueva acción 'top_events' del proxy. Se modificó el mapeo JSON para utilizar las llaves reales 'event_name' y 'total'.
+// Fecha: 2026-07-22
+// Versión: 1.6
+// Descripción: Se conectó el Mega Embudo de Onboarding al nuevo endpoint estricto (funnel_onboarding) pre-calculado por MariaDB. Esto resuelve el efecto "montaña rusa" y presenta un funnel descendente real y preciso de caídas progresivas.
 
 // 0. Protección de ruta
 require_once __DIR__ . '/includes/auth_protect.php';
@@ -6692,36 +6694,74 @@ ob_start();
                     heatmapChartInst.update();
                 }
 
-                // 4. Embudo de Onboarding & Tasa de Conversión a Premium
-                const resDist = await fetch(`ajax_analytics.php?action=distribution&groupBy=screen_name&startDate=${startDate}&endDate=${endDate}`);
-                const jsonDist = await resDist.json();
-                
-                let paywallViews = 0;
-                // Iniciamos los valores en 0 por si Hermes no los manda (evita que la barra desaparezca)
-                let fValues = { 'WelcomeView': 0, 'OnboardingQuestionsView': 0, 'HomeView': 0, 'PaywallView': 0 };
+                // ====================================================================
+                // 4. MEGA EMBUDO DE ONBOARDING Y FRICCIÓN (Consumo Estricto)
+                // ====================================================================
+                const [resFunnel, resRegFail, resTerms, resVistas] = await Promise.all([
+                    fetch(`ajax_analytics.php?action=funnel_onboarding&startDate=${startDate}&endDate=${endDate}`),
+                    fetch(`ajax_analytics.php?action=metadata_distribution&eventName=register_failed&metadataKey=method&startDate=${startDate}&endDate=${endDate}`),
+                    fetch(`ajax_analytics.php?action=metadata_distribution&eventName=checkbox_terms_clicked&metadataKey=state&startDate=${startDate}&endDate=${endDate}`),
+                    fetch(`ajax_analytics.php?action=distribution&groupBy=screen_name&startDate=${startDate}&endDate=${endDate}`) // Lo mantenemos para sacar las Paywall Views
+                ]);
 
-                if(jsonDist.success && jsonDist.data && jsonDist.data.data) {
-                    jsonDist.data.data.forEach(item => {
-                        // Si el nombre de la pantalla nos interesa, actualizamos su valor a lo que mande la base de datos
-                        if (fValues[item.name] !== undefined) fValues[item.name] = item.count;
-                        if (item.name === 'PaywallView') paywallViews = item.count;
-                    });
+                const jFunnel = await resFunnel.json();
+                const jRegFail = await resRegFail.json();
+                const jTerms = await resTerms.json();
+                const jVistas = await resVistas.json();
+
+                // 4.1. Renderizamos el Mega Embudo (Ya viene calculado limpio desde MariaDB)
+                let funnelLabels = [];
+                let funnelValues = [];
+
+                if(jFunnel.success && jFunnel.data) {
+                    // Dependiendo de cómo Hermes envolvió el Array en Node
+                    let fData = jFunnel.data.data || jFunnel.data; 
+                    if(Array.isArray(fData)) {
+                        funnelLabels = fData.map(item => item.step);
+                        funnelValues = fData.map(item => parseInt(item.count));
+                    }
                 }
-                
-                let funnelData = [
-                    {label: 'Welcome', val: fValues['WelcomeView']},
-                    {label: 'Preguntas', val: fValues['OnboardingQuestionsView']},
-                    {label: 'Home', val: fValues['HomeView']},
-                    {label: 'Paywall', val: fValues['PaywallView']}
-                ];
-                
-                // Pintamos el embudo (con 0s incluidos si es que no hubo visitas)
-                funnelChartInst.data.labels = funnelData.map(f => f.label);
-                funnelChartInst.data.datasets[0].data = funnelData.map(f => f.val);
-                funnelChartInst.data.datasets[0].backgroundColor = ['#ADD8E6', '#98FB98', '#5BC85B', '#FFB6C1'];
+
+                // Fallback de seguridad si no hay datos
+                if (funnelLabels.length === 0) {
+                    funnelLabels = ['1. Llegada', '2. Registro Exitoso', '3. Datos Personales', '4. Medidas Físicas', '5. Género/Meta', '6. Finalizado'];
+                    funnelValues = [0, 0, 0, 0, 0, 0];
+                }
+
+                funnelChartInst.data.labels = funnelLabels;
+                funnelChartInst.data.datasets[0].data = funnelValues;
+                funnelChartInst.data.datasets[0].backgroundColor = ['#93c5fd', '#60a5fa', '#3b82f6', '#2563eb', '#1d4ed8', '#1e3a8a'];
                 funnelChartInst.update();
 
-                // Compras reales vs Paywall para la Tasa de Conversión
+                // 4.2. Fricción Registro (Apple vs Email)
+                let errApple = 0, errEmail = 0;
+                if(jRegFail.success && jRegFail.data && jRegFail.data.data) {
+                    let ea = jRegFail.data.data.find(i => i.value === 'apple');
+                    let ee = jRegFail.data.data.find(i => i.value === 'email');
+                    if(ea) errApple = ea.count;
+                    if(ee) errEmail = ee.count;
+                }
+                document.getElementById('fric-apple').innerText = errApple.toLocaleString();
+                document.getElementById('fric-email').innerText = errEmail.toLocaleString();
+
+                // 4.3. Fricción Legal (Términos)
+                let checkAcc = 0, checkRech = 0;
+                if(jTerms.success && jTerms.data && jTerms.data.data) {
+                    let c1 = jTerms.data.data.find(i => i.value === 'checked');
+                    let c2 = jTerms.data.data.find(i => i.value === 'unchecked');
+                    if(c1) checkAcc = c1.count;
+                    if(c2) checkRech = c2.count;
+                }
+                document.getElementById('fric-checked').innerText = checkAcc.toLocaleString();
+                document.getElementById('fric-unchecked').innerText = checkRech.toLocaleString();
+
+                // 4.4 Tasa de Conversión a Premium (Cruzando Compras con Visitas al Paywall)
+                let paywallViews = 0; 
+                if (jVistas.success && jVistas.data && jVistas.data.data) {
+                    let pv = jVistas.data.data.find(i => i.name === 'PaywallView');
+                    if(pv) paywallViews = pv.count;
+                }
+
                 const resPurchases = await fetch(`ajax_analytics.php?action=trends_events&eventName=subscription_purchased&interval=day&startDate=${startDate}&endDate=${endDate}`);
                 const jsonPurchases = await resPurchases.json();
                 if(jsonPurchases.success && jsonPurchases.data) {
@@ -6737,15 +6777,16 @@ ob_start();
                     document.getElementById('val-purchases').innerText = totalPurchases.toLocaleString();
                 }
 
+                // ====================================================================
                 // 5. Análisis de Churn Risk (account_deleted -> reason)
+                // ====================================================================
                 const resChurn = await fetch(`ajax_analytics.php?action=metadata_distribution&eventName=account_deleted&metadataKey=reason&startDate=${startDate}&endDate=${endDate}`);
                 const jsonChurn = await resChurn.json();
                 if(jsonChurn.success && jsonChurn.data && jsonChurn.data.data) {
-                    // Si el arreglo viene vacío, significa que NO hubo bajas con razones registradas
                     if(jsonChurn.data.data.length === 0) {
                         churnChartInst.data.labels = ['Sin bajas en este periodo'];
-                        churnChartInst.data.datasets[0].data = [1]; // Valor falso solo para pintar el círculo
-                        churnChartInst.data.datasets[0].backgroundColor = ['#e5e7eb']; // Color gris inactivo
+                        churnChartInst.data.datasets[0].data = [1]; 
+                        churnChartInst.data.datasets[0].backgroundColor = ['#e5e7eb']; 
                         churnChartInst.update();
                     } else {
                         churnChartInst.data.labels = jsonChurn.data.data.map(i => i.name);
@@ -6755,7 +6796,7 @@ ob_start();
                     }
                 }
 
-                // 6. Dayparting (Endpoint actualmente no disponible en Hermes, devuelve 404)
+                // 6. Dayparting
                 const resDay = await fetch(`ajax_analytics.php?action=dayparting&startDate=${startDate}&endDate=${endDate}`);
                 const jsonDay = await resDay.json();
                 if(jsonDay.success && jsonDay.data) {
@@ -6765,21 +6806,18 @@ ob_start();
                     daypartingChartInst.data.datasets[0].backgroundColor = '#FFD700';
                     daypartingChartInst.update();
                 } else {
-                    // Manejo del error 404 elegantemente
                     daypartingChartInst.data.labels = ['Sin Data'];
                     daypartingChartInst.data.datasets[0].data = [0];
                     daypartingChartInst.update();
                 }
 
-                // 7. Top 10 Eventos (Consumiendo el NUEVO endpoint de Hermes: /admin/analytics/events/top)
+                // 7. Top 10 Eventos
                 const resTop = await fetch(`ajax_analytics.php?action=top_events&startDate=${startDate}&endDate=${endDate}`);
                 const jsonTop = await resTop.json();
                 const topList = document.getElementById('topEventsList');
                 
                 if(jsonTop.success && jsonTop.data && jsonTop.data.data) {
                     let eventsArray = jsonTop.data.data;
-                    
-                    // Ordenamos de mayor a menor y limitamos a 10 por seguridad, aunque Hermes ya lo mande ordenado
                     eventsArray.sort((a, b) => b.total - a.total);
                     let top10 = eventsArray.slice(0, 10);
                     
@@ -6932,28 +6970,80 @@ require_once __DIR__ . '/includes/header.php';
                 </div>
             </div>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-                <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm flex flex-col">
+            <!-- ================= MEGA EMBUDO Y FRICCIÓN ================= -->
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-8">
+                
+                <div class="lg:col-span-2 bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm flex flex-col">
                     <div class="flex justify-between items-center mb-4">
                         <div class="group relative inline-block cursor-help z-20">
-                            <h3 class="text-md font-bold text-gray-900 dark:text-white border-b border-dashed border-gray-400 pb-0.5 w-fit">Embudo de Onboarding</h3>
-                            <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1">Identificación de Bloqueos</p>
+                            <h3 class="text-md font-bold text-gray-900 dark:text-white border-b border-dashed border-gray-400 pb-0.5 w-fit">Mega Embudo de Onboarding</h3>
+                            <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1">Conversión Conductual de Registro</p>
                             <div class="absolute bottom-full left-0 mb-2 w-64 p-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs text-center rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 font-medium pointer-events-none">
-                                <strong>Fórmula:</strong><br> Distribución de screen_name (Welcome, OnboardingQuestions, Home, Paywall).
+                                <strong>Fórmula Estricta:</strong><br> Agrupación pre-calculada por MariaDB asegurando que un usuario solo sume si completó el paso anterior.
                                 <div class="absolute top-full left-4 border-8 border-transparent border-t-gray-900 dark:border-t-gray-100"></div>
                             </div>
                         </div>
                         <i class="ph ph-funnel text-xl text-blue-500 shrink-0"></i>
                     </div>
-                    <div class="h-56 w-full relative"><canvas id="funnelChart"></canvas></div>
+                    <div class="h-80 w-full relative"><canvas id="funnelChart"></canvas></div>
                 </div>
 
+                <div class="lg:col-span-1 flex flex-col gap-6">
+                    
+                    <!-- Tarjeta Fricción Registro -->
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-5 shadow-sm flex flex-col justify-center flex-1">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="p-2 bg-red-50 dark:bg-red-900/20 text-red-500 rounded-lg"><i class="ph ph-warning-octagon text-xl"></i></div>
+                            <div>
+                                <h4 class="font-bold text-gray-900 dark:text-white text-sm">Fricción en Registro</h4>
+                                <p class="text-[10px] text-gray-500 uppercase">Fallos por método</p>
+                            </div>
+                        </div>
+                        <div class="space-y-3">
+                            <div class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-2.5 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <span class="text-sm font-medium text-gray-600 dark:text-gray-300 flex items-center"><i class="ph-fill ph-apple-logo mr-2"></i> Apple ID</span>
+                                <span id="fric-apple" class="font-black text-gray-900 dark:text-white">--</span>
+                            </div>
+                            <div class="flex justify-between items-center bg-gray-50 dark:bg-gray-800 p-2.5 rounded-lg border border-gray-100 dark:border-gray-700">
+                                <span class="text-sm font-medium text-gray-600 dark:text-gray-300 flex items-center"><i class="ph-fill ph-envelope-simple mr-2"></i> Email</span>
+                                <span id="fric-email" class="font-black text-gray-900 dark:text-white">--</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Tarjeta Fricción Legal -->
+                    <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-5 shadow-sm flex flex-col justify-center flex-1">
+                        <div class="flex items-center gap-3 mb-4">
+                            <div class="p-2 bg-orange-50 dark:bg-orange-900/20 text-orange-500 rounded-lg"><i class="ph ph-scales text-xl"></i></div>
+                            <div>
+                                <h4 class="font-bold text-gray-900 dark:text-white text-sm">Fricción Legal</h4>
+                                <p class="text-[10px] text-gray-500 uppercase">Aceptación de términos</p>
+                            </div>
+                        </div>
+                        <div class="flex gap-4">
+                            <div class="flex-1 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700 text-center">
+                                <i class="ph-fill ph-check-square-offset text-green-500 text-xl mb-1"></i>
+                                <div id="fric-checked" class="font-black text-xl text-gray-900 dark:text-white">--</div>
+                                <span class="text-[10px] text-gray-500 uppercase">Aceptados</span>
+                            </div>
+                            <div class="flex-1 bg-gray-50 dark:bg-gray-800 p-3 rounded-lg border border-gray-100 dark:border-gray-700 text-center">
+                                <i class="ph-fill ph-square text-red-400 text-xl mb-1"></i>
+                                <div id="fric-unchecked" class="font-black text-xl text-gray-900 dark:text-white">--</div>
+                                <span class="text-[10px] text-gray-500 uppercase">Desmarcados</span>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
                 <div class="bg-white/70 dark:bg-darkbase-950/90 backdrop-blur-lg border border-white/40 dark:border-gray-800 rounded-2xl p-6 shadow-sm flex flex-col">
                     <div class="flex justify-between items-center mb-4">
                         <div class="group relative inline-block cursor-help z-20">
                             <h3 class="text-md font-bold text-gray-900 dark:text-white border-b border-dashed border-gray-400 pb-0.5 w-fit">Análisis de Abandono</h3>
                             <p class="text-[10px] text-gray-500 font-bold uppercase tracking-wider mt-1">Razones de Baja (Churn)</p>
-                            <div class="absolute bottom-full left-0 mb-2 w-64 p-3 bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs text-center rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 font-medium pointer-events-none">
+                            <div class="absolute bottom-full left-0 mb-2 w-64 p-3 bg-bg-gray-900 dark:bg-gray-100 text-white dark:text-gray-900 text-xs text-center rounded-xl shadow-xl opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-300 font-medium pointer-events-none">
                                 <strong>Fórmula:</strong><br> Conteo del evento 'account_deleted' agrupado por la llave metadata 'reason'.
                                 <div class="absolute top-full left-4 border-8 border-transparent border-t-gray-900 dark:border-t-gray-100"></div>
                             </div>
@@ -7197,9 +7287,9 @@ Archivo: ./customers.php
 <?php
 // Nombre del archivo: customers.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-22
-// Versión: 2.4
-// Descripción: Se modificó la columna de Nacimiento para mostrar la Edad calculada dinámicamente al día actual. Se reemplazó el valor numérico del IMC por su categoría médica (Bajo peso, Normal, Sobrepeso, Obesidad) calculada en tiempo real a partir del peso y la estatura, implementando colores semánticos para facilitar su lectura. Adicionalmente, se actualizó la función parseLocale para soportar códigos de región separados tanto por guión bajo (_) como por guión medio (-).
+// Fecha: 2026-07-22
+// Versión: 2.5
+// Descripción: Se dividió la métrica de uso en dos columnas ("Último Login" y "Última Apertura") consumiendo los nuevos campos fecha_ultimo_login y fecha_ultima_apertura expuestos por la API de Hermes. Esto permite analizar el DAU recurrente vs el login explícito.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -7473,6 +7563,10 @@ ob_start();
                         const subInicio = formatDate(user.subscription_started_at);
                         const subFin = formatDate(user.subscription_expires_at);
 
+                        // Nuevos Datos de Actividad y Fallback de Legado
+                        const dataUltimoLogin = user.fecha_ultimo_login ? formatDate(user.fecha_ultimo_login) : (user.ultima_sesion ? formatDate(user.ultima_sesion) : '<span class="text-gray-400">-</span>');
+                        const dataUltimaApertura = user.fecha_ultima_apertura ? formatDate(user.fecha_ultima_apertura) : '<span class="text-gray-400">-</span>';
+
                         // Identificar si el registro está incompleto para pintar toda la fila gris
                         const isRegistroIncompleto = !user.genero && !user.fecha_nacimiento && !user.lenguaje_preferido;
                         const rowCssClass = isRegistroIncompleto 
@@ -7535,18 +7629,20 @@ ob_start();
                                 
                                 <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${formatDate(user.fecha_registro)}</td>
                                 
-                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${formatDate(user.ultima_sesion)}</td>
+                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${dataUltimoLogin}</td>
+
+                                <td class="py-4 px-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-400">${dataUltimaApertura}</td>
                             </tr>
                         `;
                     });
                     
                     tbody.innerHTML = html;
                 } else {
-                    tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-red-500">No se pudieron cargar los datos.</td></tr>`;
+                    tbody.innerHTML = `<tr><td colspan="15" class="text-center py-8 text-red-500">No se pudieron cargar los datos.</td></tr>`;
                 }
             } catch (error) {
                 console.error("Error al cargar clientes:", error);
-                tbody.innerHTML = `<tr><td colspan="14" class="text-center py-8 text-red-500">Error de conexión.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="15" class="text-center py-8 text-red-500">Error de conexión.</td></tr>`;
             } finally {
                 loader.classList.add('hidden');
                 tableCont.classList.remove('hidden');
@@ -7648,6 +7744,7 @@ require_once __DIR__ . '/includes/header.php';
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Estado</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Registro</th>
                                 <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Último Login</th>
+                                <th class="py-4 px-4 text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Última Apertura</th>
                             </tr>
                         </thead>
                         <tbody id="customersTableBody" class="divide-y divide-gray-100 dark:divide-gray-800">
