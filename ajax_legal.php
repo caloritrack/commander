@@ -1,15 +1,19 @@
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 2.8
-// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF implementado para interactuar seguro con el API.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 2.9 (Blindaje Anti-SSRF con whitelist de dominio en generate_hash y activación de SSL estricto)
+// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF. Incluye validación estricta de esquema HTTPS y dominio oficial para el cálculo de hash SHA-256 de PDFs.
 
 require_once __DIR__ . '/includes/session.php';
 
 function debugLog($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/legal_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -29,7 +33,7 @@ $action = $_GET['action'] ?? '';
 $docId = trim($_GET['id'] ?? '');
 
 if ($action === 'activate' || $action === 'delete') {
-    if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''])) {
+    if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''], true)) {
         echo json_encode([
             'success' => false, 
             'http_code' => 400, 
@@ -41,16 +45,37 @@ if ($action === 'activate' || $action === 'delete') {
 
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
+// [KRILLIN SECURITY] Generador de Hash blindado contra SSRF
 if ($action === 'generate_hash' && $method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
-    $pdfUrl = $input['url'] ?? '';
-    if (empty($pdfUrl)) { echo json_encode(['success' => false]); exit(); }
+    $pdfUrl = trim($input['url'] ?? '');
+    
+    if (empty($pdfUrl) || !filter_var($pdfUrl, FILTER_VALIDATE_URL)) {
+        echo json_encode(['success' => false, 'message' => 'URL inválida.']);
+        exit();
+    }
 
-    // En esta llamada no mandamos token WAF porque es para descargar de un bucket R2 o link público externo
+    $parsedUrl = parse_url($pdfUrl);
+    $scheme = strtolower($parsedUrl['scheme'] ?? '');
+    $host = strtolower($parsedUrl['host'] ?? '');
+
+    // Solo permitimos HTTPS y dominios oficiales de CaloriTrack
+    $isAllowedHost = ($host === 'caloritrack.com' || substr($host, -16) === '.caloritrack.com');
+    if ($scheme !== 'https' || !$isAllowedHost) {
+        echo json_encode(['success' => false, 'message' => 'Por seguridad, solo se permiten documentos alojados bajo HTTPS en dominios oficiales de caloritrack.com.']);
+        exit();
+    }
+
     $chPdf = curl_init($pdfUrl);
     curl_setopt($chPdf, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($chPdf, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($chPdf, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($chPdf, CURLOPT_MAXREDIRS, 3);
+    curl_setopt($chPdf, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($chPdf, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($chPdf, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($chPdf, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($chPdf, CURLOPT_TIMEOUT, 15);
+    
     $pdfContent = curl_exec($chPdf);
     $httpCodePdf = curl_getinfo($chPdf, CURLINFO_HTTP_CODE);
     curl_close($chPdf);
@@ -58,7 +83,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     if ($pdfContent && $httpCodePdf === 200) {
         echo json_encode(['success' => true, 'hash' => hash('sha256', $pdfContent)]);
     } else {
-        echo json_encode(['success' => false, 'message' => "HTTP $httpCodePdf"]);
+        echo json_encode(['success' => false, 'message' => "No se pudo descargar el PDF (HTTP $httpCodePdf)"]);
     }
     exit(); 
 }
@@ -99,7 +124,9 @@ else {
 
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);

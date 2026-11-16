@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: sessions_report.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 1.0
-// Descripción: Nuevo reporte granular de sesiones de usuarios. Implementa filtros de fecha (por defecto el día actual) y expone telemetría detallada: dispositivo, duración, eventos disparados, y pantalla de salida de los héroes de la app.
+// Fecha y Hora: 2026-11-16 11:50:00 CST
+// Versión: 1.1 (Blindaje contra DOM XSS con escapeHtml y bandera Secure en cookies de filtro)
+// Descripción: Reporte granular de sesiones de usuarios. Implementa filtros de fecha y expone telemetría detallada (dispositivo, duración, eventos disparados y pantalla de salida) sanitizando todos los datos externos.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -52,6 +52,7 @@ ob_start();
         function formatDateTime(dateString) {
             if(!dateString) return '<span class="text-gray-400">Desconocido</span>';
             const d = new Date(dateString);
+            if (isNaN(d)) return '<span class="text-gray-400">Desconocido</span>';
             return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit', second:'2-digit' }) + ' <span class="text-[10px] text-gray-400 block">' + d.toLocaleDateString('es-MX') + '</span>';
         }
 
@@ -59,6 +60,7 @@ ob_start();
         function formatDuration(secondsRaw) {
             if(!secondsRaw && secondsRaw !== 0) return '<span class="text-gray-400">-</span>';
             const totalSecs = parseInt(secondsRaw, 10);
+            if(isNaN(totalSecs)) return '<span class="text-gray-400">-</span>';
             if(totalSecs < 60) return `<span class="text-gray-600 dark:text-gray-400 font-medium">${totalSecs}s</span>`;
             const mins = Math.floor(totalSecs / 60);
             const secs = totalSecs % 60;
@@ -92,9 +94,9 @@ ob_start();
             const btn = document.getElementById('refreshBtn');
             const btnIcon = btn.querySelector('i');
 
-            // Guardamos las cookies de fechas
-            document.cookie = "<?php echo $cookieStartName; ?>=" + startDate + "; path=/; SameSite=Strict";
-            document.cookie = "<?php echo $cookieEndName; ?>=" + endDate + "; path=/; SameSite=Strict";
+            // Guardamos las cookies de fechas con SameSite=Strict y Secure
+            document.cookie = "<?php echo $cookieStartName; ?>=" + encodeURIComponent(startDate) + "; path=/; SameSite=Strict; Secure";
+            document.cookie = "<?php echo $cookieEndName; ?>=" + encodeURIComponent(endDate) + "; path=/; SameSite=Strict; Secure";
 
             const tbody = document.getElementById('sessionsTableBody');
             const loader = document.getElementById('tableLoader');
@@ -110,7 +112,7 @@ ob_start();
 
             try {
                 // Aquí llamamos al endpoint proxy que configuramos en ajax_analytics.php
-                const res = await fetch(`ajax_analytics.php?action=sessions_detail&startDate=${startDate}&endDate=${endDate}&page=${page}`);
+                const res = await fetch(`ajax_analytics.php?action=sessions_detail&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&page=${page}`);
                 const json = await res.json();
                 
                 if(json.success && json.data) {
@@ -139,27 +141,31 @@ ob_start();
                         html = `<tr><td colspan="8" class="text-center py-12 text-gray-500 font-medium"><i class="ph ph-ghost text-4xl block mb-2 opacity-50"></i>No hay sesiones registradas en este rango de fechas.</td></tr>`;
                     } else {
                         sessions.forEach(session => {
-                            // Avatar y Datos del Heroe
-                            const userName = session.user_name || 'Héroe Anónimo';
-                            const userEmail = session.user_email || 'Sin registro';
-                            const avatarLetter = userName.charAt(0).toUpperCase();
+                            // Avatar y Datos del Héroe Sanitizados contra XSS
+                            const rawUserName = String(session.user_name || 'Héroe Anónimo');
+                            const avatarLetter = escapeHtml(rawUserName.charAt(0).toUpperCase());
+                            const userName = escapeHtml(rawUserName);
+                            const userEmail = escapeHtml(session.user_email || 'Sin registro');
 
-                            // Dispositivo (iOS o Web u Otro)
+                            // Dispositivo (iOS o Web u Otro) Sanitizado
                             let deviceIcon = '<i class="ph ph-device-mobile text-gray-400"></i>';
                             let deviceColor = 'text-gray-500 bg-gray-50 border-gray-200';
-                            let osLabel = session.os_version || 'Desconocido';
+                            let osLabel = escapeHtml(session.os_version || 'Desconocido');
+                            let deviceModel = escapeHtml(session.device_model || 'Celular');
                             
-                            if(session.platform && session.platform.toLowerCase().includes('ios')) {
+                            if(session.platform && String(session.platform).toLowerCase().includes('ios')) {
                                 deviceIcon = '<i class="ph ph-apple-logo text-gray-900 dark:text-white"></i>';
                                 deviceColor = 'text-gray-900 bg-gray-100 dark:bg-gray-800 dark:text-gray-100 border-gray-300 dark:border-gray-600';
                             }
 
-                            // Pantalla Final
-                            const lastScreen = session.last_screen || 'Desconocida';
+                            // Pantalla Final Sanitizada
+                            const lastScreen = escapeHtml(session.last_screen || 'Desconocida');
                             let screenBadge = `<span class="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded text-xs font-mono truncate max-w-[150px] inline-block" title="${lastScreen}">${lastScreen}</span>`;
 
-                            // Ubicación
-                            const locationStr = session.timezone ? session.timezone.split('/').pop().replace(/_/g, ' ') : 'Desconocida';
+                            // Ubicación Sanitizada
+                            const rawLocation = session.timezone ? String(session.timezone).split('/').pop().replace(/_/g, ' ') : 'Desconocida';
+                            const locationStr = escapeHtml(rawLocation);
+                            const totalEvents = parseInt(session.total_events, 10) || 0;
 
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
@@ -185,7 +191,7 @@ ob_start();
                                     
                                     <td class="py-4 px-4 whitespace-nowrap text-center">
                                         <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${deviceColor} text-xs font-medium">
-                                            ${deviceIcon} ${session.device_model || 'Celular'}
+                                            ${deviceIcon} ${deviceModel}
                                             <span class="opacity-50 ml-1">(${osLabel})</span>
                                         </div>
                                     </td>
@@ -196,7 +202,7 @@ ob_start();
 
                                     <td class="py-4 px-4 whitespace-nowrap text-center">
                                         <span class="px-3 py-1 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold rounded-lg border border-purple-100 dark:border-purple-800 text-xs">
-                                            ${session.total_events || 0}
+                                            ${totalEvents}
                                         </span>
                                     </td>
                                     

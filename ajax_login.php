@@ -1,14 +1,14 @@
 <?php
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.3
-// Descripción: Controlador AJAX para login. Se integró el header x-calori-token para sortear el WAF de Cloudflare.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.4 (Prevención de Session Fixation con session_regenerate_id y verificación SSL estricta)
+// Descripción: Controlador AJAX para login. Consume la API de autenticación con token WAF, verifica el certificado SSL, regenera el ID de sesión al autenticar y almacena el JWT de forma segura.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Indicamos que devolveremos JSON
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Solo aceptamos peticiones POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -18,7 +18,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Obtenemos el cuerpo de la petición (JSON) enviado por fetch()
 $input = json_decode(file_get_contents('php://input'), true);
-$email = $input['email'] ?? '';
+$email = trim($input['email'] ?? '');
 $password = $input['password'] ?? '';
 
 if (empty($email) || empty($password)) {
@@ -34,6 +34,9 @@ $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Content-Type: application/json',
     'Accept: application/json',
@@ -44,15 +47,6 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
-
-// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
-if ($httpCode === 401) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    session_destroy();
-}
-// ------------------
 
 // Verificamos si hubo un error a nivel de red o de HTTP
 if ($error || $httpCode !== 200) {
@@ -71,6 +65,9 @@ if (empty($responseData['access_token'])) {
     echo json_encode(['success' => false, 'message' => 'Login válido, pero Hermes no devolvió un access_token de seguridad.']);
     exit();
 }
+
+// [KRILLIN SECURITY] Regeneramos el ID de sesión tras login exitoso para prevenir Session Fixation
+session_regenerate_id(true);
 
 // Guardamos en sesión los datos reales
 $_SESSION['user_token'] = $responseData['access_token'];

@@ -1,29 +1,30 @@
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-22
-// Versión: 1.17
-// Descripción: Controlador AJAX proxy seguro. Se agregó la nueva acción 'funnel_onboarding' para consumir el embudo de conversión estricto pre-calculado por MariaDB.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.18 (Sanitización urlencode/intval de parámetros GET, protección de carpeta logs y SSL estricto)
+// Descripción: Controlador AJAX proxy seguro para Analíticas y Dashboards. Codifica todos los parámetros antes de construir la URL hacia Hermes y protege los archivos de depuración.
 
 require_once __DIR__ . '/includes/session.php';
 
-// Función interna para guardar logs
+// Función interna para guardar logs de forma segura
 function debugLog($message) {
     $logDir = __DIR__ . '/logs';
     $logFile = $logDir . '/analytics_debug.log';
     
-    // Verificamos si la carpeta existe, si no, la creamos (con permisos seguros)
+    // Verificamos si la carpeta existe, si no, la creamos con bloqueo web integrado
     if (!is_dir($logDir)) {
-        mkdir($logDir, 0755, true);
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
     }
     
     $date = date('Y-m-d H:i:s');
-    // Escribimos al final del archivo
     file_put_contents($logFile, "[$date] " . $message . PHP_EOL, FILE_APPEND);
 }
 
 // Indicamos que devolveremos JSON
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Solo aceptamos peticiones GET para lectura de datos
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -40,10 +41,12 @@ if (!isset($_SESSION['user_token'])) {
 }
 
 $token = $_SESSION['user_token'];
-$action = $_GET['action'] ?? '';
-$startDate = $_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'));
-$endDate = $_GET['endDate'] ?? date('Y-m-d');
-$page = $_GET['page'] ?? 1;
+$action = trim($_GET['action'] ?? '');
+
+// [KRILLIN SECURITY] Sanitización y codificación de todos los parámetros GET para evitar HTTP Parameter Pollution
+$startDate = urlencode(trim($_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'))));
+$endDate = urlencode(trim($_GET['endDate'] ?? date('Y-m-d')));
+$page = max(1, intval($_GET['page'] ?? 1));
 
 $apiUrl = 'https://api.caloritrack.com';
 $endpoint = '';
@@ -52,22 +55,21 @@ $endpoint = '';
 if ($action === 'kpis') {
     $endpoint = "/admin/analytics/kpis?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'trends') {
-    $metric = $_GET['metric'] ?? 'unique_users';
-    $interval = $_GET['interval'] ?? 'day';
+    $metric = urlencode(trim($_GET['metric'] ?? 'unique_users'));
+    $interval = urlencode(trim($_GET['interval'] ?? 'day'));
     $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric={$metric}";
 } elseif ($action === 'trends_events') {
-    $eventName = $_GET['eventName'] ?? '';
-    $interval = $_GET['interval'] ?? 'day';
+    $eventName = urlencode(trim($_GET['eventName'] ?? ''));
+    $interval = urlencode(trim($_GET['interval'] ?? 'day'));
     $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric=events&eventName={$eventName}";
 } elseif ($action === 'distribution') {
-    $groupBy = $_GET['groupBy'] ?? 'screen_name';
+    $groupBy = urlencode(trim($_GET['groupBy'] ?? 'screen_name'));
     $endpoint = "/admin/analytics/events/distribution?startDate={$startDate}&endDate={$endDate}&groupBy={$groupBy}";
 } elseif ($action === 'metadata_distribution') {
-    $eventName = $_GET['eventName'] ?? '';
-    $metadataKey = $_GET['metadataKey'] ?? '';
+    $eventName = urlencode(trim($_GET['eventName'] ?? ''));
+    $metadataKey = urlencode(trim($_GET['metadataKey'] ?? ''));
     $endpoint = "/admin/analytics/events/metadata?eventName={$eventName}&metadataKey={$metadataKey}&startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'funnel_onboarding') {
-    // NUEVO: Endpoint estricto para el embudo de conversión pre-calculado
     $endpoint = "/admin/analytics/funnel/onboarding?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'schema') {
     $endpoint = "/admin/analytics/schema";
@@ -92,16 +94,13 @@ if ($action === 'kpis') {
 }
 
 $fullUrl = $apiUrl . $endpoint;
-debugLog("--- INICIANDO PETICIÓN A HERMES ---");
-debugLog("URL Destino: " . $fullUrl);
 
-// Enmascaramos el token un poco por seguridad en los logs
-$maskedToken = substr($token, 0, 10) . '...' . substr($token, -10);
-debugLog("Token enviado: Bearer " . $maskedToken);
-
-// Consumo de la API de Hermes mediante cURL
+// Consumo de la API de Hermes mediante cURL con verificación SSL activa
 $ch = curl_init($fullUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
@@ -113,11 +112,9 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
 
-debugLog("Código HTTP recibido: " . $httpCode);
-
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
-    debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    debugLog("FALLO EN CURL ($fullUrl) -> HTTP: $httpCode | Error cURL: " . ($error ?: "Ninguno"));
     
     // KRILLIN FIX: Si Hermes nos batea por token caducado (401), destruimos la sesión de PHP de una vez
     if ($httpCode === 401) {
@@ -126,15 +123,12 @@ if ($error || $httpCode !== 200) {
 
     echo json_encode([
         'success' => false, 
-        'http_code' => $httpCode, // <-- Lo ponemos en la raíz para que el interceptor del frontend lo caché fácil
+        'http_code' => $httpCode,
         'message' => 'Error al conectar con los servidores de Hermes.',
         'debug' => ['error' => $error, 'http_code' => $httpCode]
     ]);
     exit();
 }
-
-debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "...");
-debugLog("--- FIN DE LA PETICIÓN ---");
 
 $responseData = json_decode($response, true);
 echo json_encode(['success' => true, 'data' => $responseData]);

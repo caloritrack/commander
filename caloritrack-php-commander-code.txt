@@ -811,15 +811,19 @@ Archivo: ./ajax_unidades.php
 <?php
 // Nombre del archivo: ajax_unidades.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.2
-// Descripción: Controlador Proxy RESTful para Unidades de Medida. Se inyectó la validación del WAF de Cloudflare para las cabeceras HTTP.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.3 (Validación numérica de ID, autoprotección de logs y verificación SSL activa)
+// Descripción: Controlador Proxy RESTful para Unidades de Medida. Incluye token WAF de Cloudflare, validación entera del ID y verificación estricta del certificado SSL.
 
 require_once __DIR__ . '/includes/session.php';
 
 function debugLogUnidades($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/unidades_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -835,8 +839,8 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/unidades';
 
@@ -853,7 +857,7 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
@@ -865,7 +869,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -873,7 +877,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -884,7 +888,9 @@ else {
 
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -943,9 +949,9 @@ Archivo: ./ajax_upload.php
 <?php
 // Nombre del archivo: ajax_upload.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.2
-// Descripción: Controlador Proxy para subir imágenes. Se añadió la cabecera x-calori-token para autorizar la petición a través de Cloudflare.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.3 (Validación real de MIME type con finfo, límite de tamaño, whitelist de carpetas y SSL estricto)
+// Descripción: Controlador Proxy para subir imágenes a Cloudflare R2 vía Hermes. Valida en servidor que los bytes correspondan a una imagen legítima y restringe los directorios destino permitidos.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -953,7 +959,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // 1. Verificación de Seguridad: Sólo Héroes logueados pueden subir archivos
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -966,7 +972,11 @@ if (!isset($_FILES['image'])) {
 }
 
 $file = $_FILES['image'];
-$folder = $_POST['folder'] ?? 'general'; // Para separar en R2: /food o /platillos
+
+// [KRILLIN SECURITY] Whitelist estricta para el directorio destino en R2
+$allowedFolders = ['general', 'food', 'platillos'];
+$requestedFolder = trim($_POST['folder'] ?? 'general');
+$folder = in_array($requestedFolder, $allowedFolders, true) ? $requestedFolder : 'general';
 
 // Validar errores de subida nativos de PHP
 if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -974,15 +984,42 @@ if ($file['error'] !== UPLOAD_ERR_OK) {
     exit();
 }
 
+// Validar tamaño máximo (10 MB)
+$maxBytes = 10 * 1024 * 1024;
+if ($file['size'] <= 0 || $file['size'] > $maxBytes) {
+    echo json_encode(['success' => false, 'message' => 'El archivo excede el tamaño máximo permitido (10 MB) o está vacío.']);
+    exit();
+}
+
+// [KRILLIN SECURITY] Inspección real de bytes (MIME Type) en el servidor
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$realMimeType = finfo_file($finfo, $file['tmp_name']);
+finfo_close($finfo);
+
+$allowedMimeTypes = [
+    'image/webp' => 'webp',
+    'image/jpeg' => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif'
+];
+
+if (!array_key_exists($realMimeType, $allowedMimeTypes)) {
+    echo json_encode(['success' => false, 'message' => 'Formato de archivo no permitido (' . htmlspecialchars($realMimeType) . '). Sólo se aceptan imágenes WebP, JPG, PNG o GIF.']);
+    exit();
+}
+
+// Sanitizar el nombre del archivo enviado
+$baseName = pathinfo($file['name'], PATHINFO_FILENAME);
+$safeBaseName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $baseName) ?: 'imagen_caloritrack';
+$safeFileName = $safeBaseName . '.' . $allowedMimeTypes[$realMimeType];
+
 // 3. Empaquetar y mandar a la API de Hermes
-// Preparamos el archivo con CURLFile (Evita el deprecado '@')
-$cfile = new CURLFile($file['tmp_name'], $file['type'], $file['name']);
+$cfile = new CURLFile($file['tmp_name'], $realMimeType, $safeFileName);
 $postData = [
     'image' => $cfile,
     'folder' => $folder
 ];
 
-// EL FIX ESTÁ AQUÍ: Restauramos la ruta correcta que Hermes ya conoce
 $apiUrl = 'https://api.caloritrack.com/admin/upload-image'; 
 
 $ch = curl_init();
@@ -994,7 +1031,9 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
     'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -1008,7 +1047,6 @@ if ($httpCode === 401) {
     }
     session_destroy();
 }
-// ------------------
 
 // 4. Manejo de Errores de Red
 if ($curlError) {
@@ -1020,15 +1058,13 @@ $decoded = json_decode($response, true);
 
 // 5. Devolver la respuesta al Frontend
 if ($httpCode >= 200 && $httpCode < 300) {
-    // Éxito: devolvemos la ruta o nombre final para que el Javascript lo ponga en el input de texto
     echo json_encode([
         'success' => true, 
         'data' => isset($decoded['data']) ? $decoded['data'] : $decoded
     ]);
 } else {
-    // Falla: Hermes rechazó el archivo
     $errorMsg = isset($decoded['message']) ? $decoded['message'] : 'Hermes rechazó el archivo (Error ' . $httpCode . ').';
-    echo json_encode(['success' => false, 'message' => $errorMsg]);
+    echo json_encode(['success' => false, 'http_code' => $httpCode, 'message' => $errorMsg]);
 }
 ?>-----
 Archivo: ./dashboard.php
@@ -2781,16 +2817,20 @@ Archivo: ./ajax_platillos.php
 <?php
 // Nombre del archivo: ajax_platillos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.1
-// Descripción: Controlador Proxy RESTful aislado para gestionar Platillos. Modificado para inyectar token de WAF Cloudflare.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.2 (Validación numérica de ID/paginación, código 401 estandarizado y verificación SSL activa)
+// Descripción: Controlador Proxy RESTful aislado para gestionar Platillos. Incluye token WAF Cloudflare, sanitización de parámetros de ruta y validación de certificado SSL.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Sistema de logs aislados para depuración si algo falla con Hermes
 function debugLogPlatillos($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/platillos_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -2801,14 +2841,14 @@ header('Content-Type: application/json; charset=utf-8');
 
 // Validación estricta de Héroe autenticado
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/platillos';
 
@@ -2822,9 +2862,9 @@ $headers = [
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
-    $page = $_GET['page'] ?? 1;
-    $limit = $_GET['limit'] ?? 50;
-    $search = urlencode($_GET['search'] ?? '');
+    $page = max(1, intval($_GET['page'] ?? 1));
+    $limit = max(1, intval($_GET['limit'] ?? 50));
+    $search = urlencode(trim($_GET['search'] ?? ''));
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
@@ -2834,7 +2874,7 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
@@ -2846,7 +2886,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -2854,7 +2894,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -2863,10 +2903,12 @@ else {
     exit();
 }
 
-// Configuración Base cURL
+// Configuración Base cURL con SSL estricto
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -2880,7 +2922,6 @@ if ($httpCode === 401) {
     }
     session_destroy();
 }
-// ------------------
 
 // Manejo de Respuesta HTTP 204 (Delete exitoso sin contenido)
 if ($httpCode === 204) {
@@ -2919,15 +2960,19 @@ Archivo: ./ajax_equivalencias.php
 <?php
 // Nombre del archivo: ajax_equivalencias.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.2
-// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Integración limpia del x-calori-token.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.3 (Validación entera de id_alimento/id_equivalencia, autoprotección de logs y SSL activo)
+// Descripción: Controlador Proxy RESTful aislado para Equivalencias. Valida que los identificadores sean enteros positivos, protege los logs y activa la verificación SSL.
 
 require_once __DIR__ . '/includes/session.php';
 
 function debugLogEquivalencias($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/equivalencias_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -2943,16 +2988,16 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id_alimento = trim($_GET['id_alimento'] ?? '');
-$id_equivalencia = trim($_GET['id_equivalencia'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id_alimento = intval($_GET['id_alimento'] ?? 0);
+$id_equivalencia = intval($_GET['id_equivalencia'] ?? 0);
 
-if (empty($id_alimento)) {
-    echo json_encode(['success' => false, 'message' => 'Se requiere el ID del alimento maestro.']);
+if ($id_alimento <= 0) {
+    echo json_encode(['success' => false, 'message' => 'Se requiere un ID válido del alimento maestro.']);
     exit();
 }
 
-$apiUrl = 'https://api.caloritrack.com/admin/alimentos/' . urlencode($id_alimento) . '/equivalencias';
+$apiUrl = 'https://api.caloritrack.com/admin/alimentos/' . $id_alimento . '/equivalencias';
 
 $ch = curl_init();
 $headers = [
@@ -2974,16 +3019,16 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para actualizar.']); exit(); }
+    if ($id_equivalencia <= 0) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia válido requerido para actualizar.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
-    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
+    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id_equivalencia);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'PUT');
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id_equivalencia)) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia requerido para eliminar.']); exit(); }
-    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . urlencode($id_equivalencia));
+    if ($id_equivalencia <= 0) { echo json_encode(['success' => false, 'message' => 'ID de equivalencia válido requerido para eliminar.']); exit(); }
+    curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id_equivalencia);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
 else {
@@ -2993,7 +3038,9 @@ else {
 
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -3039,15 +3086,19 @@ Archivo: ./ajax_planes_v2.php
 <?php
 // Nombre del archivo: ajax_planes_v2.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.7
-// Descripción: Controlador Proxy RESTful para Planes Alimenticios. Implementación del header de WAF Cloudflare superada con éxito.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.8 (Validación numérica de ID/paginación, autoprotección de logs y verificación SSL activa)
+// Descripción: Controlador Proxy RESTful para Planes Alimenticios (/admin/planes-v2). Asegura los parámetros de ruta contra inyecciones y valida el certificado SSL de Hermes.
 
 require_once __DIR__ . '/includes/session.php';
 
 function debugLogPlanesV2($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/planes_v2_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -3064,8 +3115,8 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/planes-v2';
 
@@ -3080,9 +3131,9 @@ $headers = [
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
-    $page = $_GET['page'] ?? 1;
-    $limit = $_GET['limit'] ?? 50;
-    $search = urlencode($_GET['search'] ?? '');
+    $page = max(1, intval($_GET['page'] ?? 1));
+    $limit = max(1, intval($_GET['limit'] ?? 50));
+    $search = urlencode(trim($_GET['search'] ?? ''));
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
@@ -3092,7 +3143,7 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
@@ -3104,7 +3155,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput); 
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -3112,7 +3163,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -3123,7 +3174,9 @@ else {
 
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 curl_setopt($ch, CURLOPT_HTTP_VERSION, CURL_HTTP_VERSION_1_1);
 
 $response = curl_exec($ch);
@@ -3182,14 +3235,14 @@ Archivo: ./ajax_login.php
 <?php
 // Nombre del archivo: ajax_login.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.3
-// Descripción: Controlador AJAX para login. Se integró el header x-calori-token para sortear el WAF de Cloudflare.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.4 (Prevención de Session Fixation con session_regenerate_id y verificación SSL estricta)
+// Descripción: Controlador AJAX para login. Consume la API de autenticación con token WAF, verifica el certificado SSL, regenera el ID de sesión al autenticar y almacena el JWT de forma segura.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Indicamos que devolveremos JSON
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Solo aceptamos peticiones POST
 if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
@@ -3199,7 +3252,7 @@ if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
 
 // Obtenemos el cuerpo de la petición (JSON) enviado por fetch()
 $input = json_decode(file_get_contents('php://input'), true);
-$email = $input['email'] ?? '';
+$email = trim($input['email'] ?? '');
 $password = $input['password'] ?? '';
 
 if (empty($email) || empty($password)) {
@@ -3215,6 +3268,9 @@ $ch = curl_init($apiUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_POST, true);
 curl_setopt($ch, CURLOPT_POSTFIELDS, $payload);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Content-Type: application/json',
     'Accept: application/json',
@@ -3225,15 +3281,6 @@ $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
-
-// KRILLIN FIX: Si Hermes nos batea por token caducado, matamos la sesión PHP
-if ($httpCode === 401) {
-    if (session_status() === PHP_SESSION_NONE) {
-        session_start();
-    }
-    session_destroy();
-}
-// ------------------
 
 // Verificamos si hubo un error a nivel de red o de HTTP
 if ($error || $httpCode !== 200) {
@@ -3253,6 +3300,9 @@ if (empty($responseData['access_token'])) {
     exit();
 }
 
+// [KRILLIN SECURITY] Regeneramos el ID de sesión tras login exitoso para prevenir Session Fixation
+session_regenerate_id(true);
+
 // Guardamos en sesión los datos reales
 $_SESSION['user_token'] = $responseData['access_token'];
 
@@ -3271,29 +3321,30 @@ Archivo: ./ajax_analytics.php
 <?php
 // Nombre del archivo: ajax_analytics.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-22
-// Versión: 1.17
-// Descripción: Controlador AJAX proxy seguro. Se agregó la nueva acción 'funnel_onboarding' para consumir el embudo de conversión estricto pre-calculado por MariaDB.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.18 (Sanitización urlencode/intval de parámetros GET, protección de carpeta logs y SSL estricto)
+// Descripción: Controlador AJAX proxy seguro para Analíticas y Dashboards. Codifica todos los parámetros antes de construir la URL hacia Hermes y protege los archivos de depuración.
 
 require_once __DIR__ . '/includes/session.php';
 
-// Función interna para guardar logs
+// Función interna para guardar logs de forma segura
 function debugLog($message) {
     $logDir = __DIR__ . '/logs';
     $logFile = $logDir . '/analytics_debug.log';
     
-    // Verificamos si la carpeta existe, si no, la creamos (con permisos seguros)
+    // Verificamos si la carpeta existe, si no, la creamos con bloqueo web integrado
     if (!is_dir($logDir)) {
-        mkdir($logDir, 0755, true);
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
     }
     
     $date = date('Y-m-d H:i:s');
-    // Escribimos al final del archivo
     file_put_contents($logFile, "[$date] " . $message . PHP_EOL, FILE_APPEND);
 }
 
 // Indicamos que devolveremos JSON
-header('Content-Type: application/json');
+header('Content-Type: application/json; charset=utf-8');
 
 // Solo aceptamos peticiones GET para lectura de datos
 if ($_SERVER['REQUEST_METHOD'] !== 'GET') {
@@ -3310,10 +3361,12 @@ if (!isset($_SESSION['user_token'])) {
 }
 
 $token = $_SESSION['user_token'];
-$action = $_GET['action'] ?? '';
-$startDate = $_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'));
-$endDate = $_GET['endDate'] ?? date('Y-m-d');
-$page = $_GET['page'] ?? 1;
+$action = trim($_GET['action'] ?? '');
+
+// [KRILLIN SECURITY] Sanitización y codificación de todos los parámetros GET para evitar HTTP Parameter Pollution
+$startDate = urlencode(trim($_GET['startDate'] ?? date('Y-m-d', strtotime('-7 days'))));
+$endDate = urlencode(trim($_GET['endDate'] ?? date('Y-m-d')));
+$page = max(1, intval($_GET['page'] ?? 1));
 
 $apiUrl = 'https://api.caloritrack.com';
 $endpoint = '';
@@ -3322,22 +3375,21 @@ $endpoint = '';
 if ($action === 'kpis') {
     $endpoint = "/admin/analytics/kpis?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'trends') {
-    $metric = $_GET['metric'] ?? 'unique_users';
-    $interval = $_GET['interval'] ?? 'day';
+    $metric = urlencode(trim($_GET['metric'] ?? 'unique_users'));
+    $interval = urlencode(trim($_GET['interval'] ?? 'day'));
     $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric={$metric}";
 } elseif ($action === 'trends_events') {
-    $eventName = $_GET['eventName'] ?? '';
-    $interval = $_GET['interval'] ?? 'day';
+    $eventName = urlencode(trim($_GET['eventName'] ?? ''));
+    $interval = urlencode(trim($_GET['interval'] ?? 'day'));
     $endpoint = "/admin/analytics/trends?startDate={$startDate}&endDate={$endDate}&interval={$interval}&metric=events&eventName={$eventName}";
 } elseif ($action === 'distribution') {
-    $groupBy = $_GET['groupBy'] ?? 'screen_name';
+    $groupBy = urlencode(trim($_GET['groupBy'] ?? 'screen_name'));
     $endpoint = "/admin/analytics/events/distribution?startDate={$startDate}&endDate={$endDate}&groupBy={$groupBy}";
 } elseif ($action === 'metadata_distribution') {
-    $eventName = $_GET['eventName'] ?? '';
-    $metadataKey = $_GET['metadataKey'] ?? '';
+    $eventName = urlencode(trim($_GET['eventName'] ?? ''));
+    $metadataKey = urlencode(trim($_GET['metadataKey'] ?? ''));
     $endpoint = "/admin/analytics/events/metadata?eventName={$eventName}&metadataKey={$metadataKey}&startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'funnel_onboarding') {
-    // NUEVO: Endpoint estricto para el embudo de conversión pre-calculado
     $endpoint = "/admin/analytics/funnel/onboarding?startDate={$startDate}&endDate={$endDate}";
 } elseif ($action === 'schema') {
     $endpoint = "/admin/analytics/schema";
@@ -3362,16 +3414,13 @@ if ($action === 'kpis') {
 }
 
 $fullUrl = $apiUrl . $endpoint;
-debugLog("--- INICIANDO PETICIÓN A HERMES ---");
-debugLog("URL Destino: " . $fullUrl);
 
-// Enmascaramos el token un poco por seguridad en los logs
-$maskedToken = substr($token, 0, 10) . '...' . substr($token, -10);
-debugLog("Token enviado: Bearer " . $maskedToken);
-
-// Consumo de la API de Hermes mediante cURL
+// Consumo de la API de Hermes mediante cURL con verificación SSL activa
 $ch = curl_init($fullUrl);
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
     'Accept: application/json',
@@ -3383,11 +3432,9 @@ $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
 $error = curl_error($ch);
 curl_close($ch);
 
-debugLog("Código HTTP recibido: " . $httpCode);
-
 // Manejo de errores de red o HTTP
 if ($error || $httpCode !== 200) {
-    debugLog("FALLO EN CURL o HTTP NO ES 200. Error interno cURL: " . ($error ? $error : "Ninguno") . ". Respuesta de Hermes: " . $response);
+    debugLog("FALLO EN CURL ($fullUrl) -> HTTP: $httpCode | Error cURL: " . ($error ?: "Ninguno"));
     
     // KRILLIN FIX: Si Hermes nos batea por token caducado (401), destruimos la sesión de PHP de una vez
     if ($httpCode === 401) {
@@ -3396,15 +3443,12 @@ if ($error || $httpCode !== 200) {
 
     echo json_encode([
         'success' => false, 
-        'http_code' => $httpCode, // <-- Lo ponemos en la raíz para que el interceptor del frontend lo caché fácil
+        'http_code' => $httpCode,
         'message' => 'Error al conectar con los servidores de Hermes.',
         'debug' => ['error' => $error, 'http_code' => $httpCode]
     ]);
     exit();
 }
-
-debugLog("RESPUESTA EXITOSA DE HERMES: " . substr($response, 0, 800) . "...");
-debugLog("--- FIN DE LA PETICIÓN ---");
 
 $responseData = json_decode($response, true);
 echo json_encode(['success' => true, 'data' => $responseData]);
@@ -4170,14 +4214,21 @@ Archivo: ./includes/topbar.php
         </script>-----
 Archivo: ./includes/session.php
 <?php
-// Nombre del archivo: session.php
+// Nombre del archivo: includes/session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 2.3
-// Descripción: Inicialización centralizada de sesiones para Commander. Se incluyó el nuevo archivo api_security.php para cargar las credenciales del WAF de Cloudflare de forma global.
+// Fecha y Hora: 2026-11-16 11:45:00 CST
+// Versión: 2.4 (Corrección de SameSite=Strict en Rolling Session y adición de cabeceras HTTP de seguridad)
+// Descripción: Inicialización centralizada de sesiones para Commander. Carga credenciales WAF, emite cabeceras de seguridad anti-Clickjacking/MIME-sniffing, preserva SameSite=Strict en cada renovación y valida la vigencia del JWT.
 
 // Cargamos la configuración de seguridad de la API (WAF)
 require_once __DIR__ . '/api_security.php';
+
+// Emitir cabeceras HTTP de seguridad globales
+if (!headers_sent()) {
+    header('X-Frame-Options: DENY');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+}
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
@@ -4187,9 +4238,10 @@ $segundos_sesion = 60 * 60 * 24 * $dias_sesion;
 // para que el cron de limpieza nocturno del servidor no nos las elimine.
 $session_path = __DIR__ . '/sessions_data';
 if (!is_dir($session_path)) {
-    mkdir($session_path, 0755, true);
-    // Creamos un .htaccess rápido por seguridad para evitar cualquier acceso web directo
-    file_put_contents($session_path . '/.htaccess', 'Require all denied');
+    mkdir($session_path, 0750, true);
+    // Creamos un .htaccess y un index.php por seguridad para evitar cualquier acceso web directo
+    file_put_contents($session_path . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+    file_put_contents($session_path . '/index.php', "<?php http_response_code(403); exit; ?>");
 }
 session_save_path($session_path);
 
@@ -4215,17 +4267,16 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // 4. Renovar la vigencia de la cookie cada vez que el admin navega (Rolling Session)
-// Así, los 60 días se cuentan desde el ÚLTIMO día que usaste el Commander.
+// Usamos el formato de arreglo asociativo para preservar intacto el atributo SameSite=Strict.
 if (isset($_COOKIE[session_name()])) {
-    setcookie(
-        session_name(), 
-        $_COOKIE[session_name()], 
-        time() + $segundos_sesion, 
-        '/', 
-        '', 
-        true, 
-        true
-    );
+    setcookie(session_name(), $_COOKIE[session_name()], [
+        'expires' => time() + $segundos_sesion,
+        'path' => '/',
+        'domain' => '',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
 }
 
 // =====================================================================
@@ -4252,9 +4303,16 @@ if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
                 session_unset();
                 session_destroy();
                 
-                // Borramos la cookie de la sesión
+                // Borramos la cookie de la sesión manteniendo los flags de seguridad
                 if (isset($_COOKIE[session_name()])) {
-                    setcookie(session_name(), '', time() - 3600, '/');
+                    setcookie(session_name(), '', [
+                        'expires' => time() - 3600,
+                        'path' => '/',
+                        'domain' => '',
+                        'secure' => true,
+                        'httponly' => true,
+                        'samesite' => 'Strict'
+                    ]);
                 }
                 
                 // Detectar si la petición que disparó esto es AJAX/Fetch o una navegación de página normal
@@ -4268,7 +4326,6 @@ if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
                     exit();
                 } else {
                     // Si diste clic a una opción del menú y era navegación normal, te manda a logout
-                    // Asumimos que tienes un logout.php que redirige al login final
                     header("Location: logout.php");
                     exit();
                 }
@@ -4281,9 +4338,9 @@ Archivo: ./includes/header.php
 <?php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.8
-// Descripción: Cabecera global. Se agregó un interceptor de Fetch global con Javascript para detectar expiración de sesión (401) y redirigir con un modal elegante.
+// Fecha y Hora: 2026-11-16 11:45:00 CST
+// Versión: 1.9 (Adición de sanitizador global escapeHtml contra ataques DOM XSS)
+// Descripción: Cabecera global. Incluye configuración de Tailwind, prevención de flash en modo oscuro, función global escapeHtml() para sanitizar datos externos en tablas dinámicas e interceptor de expiración de sesión (401).
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
@@ -4341,6 +4398,18 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
     </script>
 
     <script>
+        // [KRILLIN SECURITY] Sanitizador Global contra DOM XSS
+        // Escapa caracteres peligrosos (&, <, >, ", ') antes de inyectar variables en innerHTML o atributos
+        window.escapeHtml = function(unsafe) {
+            if (unsafe === null || unsafe === undefined) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        };
+
         // [KRILLIN] Cerbero Interceptor (Fetch + XHR + jQuery)
         // Función centralizada para disparar el modal con estilo
         function triggerSessionExpiredModal() {
@@ -5116,15 +5185,19 @@ Archivo: ./ajax_legal.php
 <?php
 // Nombre del archivo: ajax_legal.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 2.8
-// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF implementado para interactuar seguro con el API.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 2.9 (Blindaje Anti-SSRF con whitelist de dominio en generate_hash y activación de SSL estricto)
+// Descripción: Controlador Proxy para Bóveda Legal con soporte WAF. Incluye validación estricta de esquema HTTPS y dominio oficial para el cálculo de hash SHA-256 de PDFs.
 
 require_once __DIR__ . '/includes/session.php';
 
 function debugLog($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/legal_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -5144,7 +5217,7 @@ $action = $_GET['action'] ?? '';
 $docId = trim($_GET['id'] ?? '');
 
 if ($action === 'activate' || $action === 'delete') {
-    if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''])) {
+    if (in_array($docId, ['undefined', 'null', 'ERROR_NO_UUID', ''], true)) {
         echo json_encode([
             'success' => false, 
             'http_code' => 400, 
@@ -5156,16 +5229,37 @@ if ($action === 'activate' || $action === 'delete') {
 
 $apiUrl = 'https://api.caloritrack.com/admin/legal-documents';
 
+// [KRILLIN SECURITY] Generador de Hash blindado contra SSRF
 if ($action === 'generate_hash' && $method === 'POST') {
     $input = json_decode(file_get_contents('php://input'), true);
-    $pdfUrl = $input['url'] ?? '';
-    if (empty($pdfUrl)) { echo json_encode(['success' => false]); exit(); }
+    $pdfUrl = trim($input['url'] ?? '');
+    
+    if (empty($pdfUrl) || !filter_var($pdfUrl, FILTER_VALIDATE_URL)) {
+        echo json_encode(['success' => false, 'message' => 'URL inválida.']);
+        exit();
+    }
 
-    // En esta llamada no mandamos token WAF porque es para descargar de un bucket R2 o link público externo
+    $parsedUrl = parse_url($pdfUrl);
+    $scheme = strtolower($parsedUrl['scheme'] ?? '');
+    $host = strtolower($parsedUrl['host'] ?? '');
+
+    // Solo permitimos HTTPS y dominios oficiales de CaloriTrack
+    $isAllowedHost = ($host === 'caloritrack.com' || substr($host, -16) === '.caloritrack.com');
+    if ($scheme !== 'https' || !$isAllowedHost) {
+        echo json_encode(['success' => false, 'message' => 'Por seguridad, solo se permiten documentos alojados bajo HTTPS en dominios oficiales de caloritrack.com.']);
+        exit();
+    }
+
     $chPdf = curl_init($pdfUrl);
     curl_setopt($chPdf, CURLOPT_RETURNTRANSFER, true);
     curl_setopt($chPdf, CURLOPT_FOLLOWLOCATION, true);
-    curl_setopt($chPdf, CURLOPT_SSL_VERIFYPEER, false);
+    curl_setopt($chPdf, CURLOPT_MAXREDIRS, 3);
+    curl_setopt($chPdf, CURLOPT_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($chPdf, CURLOPT_REDIR_PROTOCOLS, CURLPROTO_HTTPS);
+    curl_setopt($chPdf, CURLOPT_SSL_VERIFYPEER, true);
+    curl_setopt($chPdf, CURLOPT_SSL_VERIFYHOST, 2);
+    curl_setopt($chPdf, CURLOPT_TIMEOUT, 15);
+    
     $pdfContent = curl_exec($chPdf);
     $httpCodePdf = curl_getinfo($chPdf, CURLINFO_HTTP_CODE);
     curl_close($chPdf);
@@ -5173,7 +5267,7 @@ if ($action === 'generate_hash' && $method === 'POST') {
     if ($pdfContent && $httpCodePdf === 200) {
         echo json_encode(['success' => true, 'hash' => hash('sha256', $pdfContent)]);
     } else {
-        echo json_encode(['success' => false, 'message' => "HTTP $httpCodePdf"]);
+        echo json_encode(['success' => false, 'message' => "No se pudo descargar el PDF (HTTP $httpCodePdf)"]);
     }
     exit(); 
 }
@@ -5214,7 +5308,9 @@ else {
 
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -5240,27 +5336,35 @@ echo json_encode([
 ]);
 ?>-----
 Archivo: ./.gitignore
-# Ignorar archivos sensibles
+# Nombre del archivo: .gitignore
+# Autor: Arturo Enriquez Betancourt con Krillin
+# Fecha y Hora: 2026-11-16 11:45:00 CST
+# Versión: 1.2 (Exclusión de includes/api_security.php y carpeta de sesiones del repositorio Git)
+# Descripción: Lista de archivos y directorios sensibles o temporales que Git debe ignorar para evitar fugas de credenciales.
+
+# Ignorar archivos sensibles y credenciales
 .htaccess
 .gitignore
 Caloritrack Database.session.sql
 htaccess
 Consideraciones base.md
+includes/api_security.php
 
-# Ignorar archivos del sistema
+# Ignorar archivos del sistema y sesiones locales
 .DS_Store
 /.well-known
 /.vscode
 /_other
 /tmp
-/logs-----
+/logs
+/includes/sessions_data-----
 Archivo: ./sessions_report.php
 <?php
 // Nombre del archivo: sessions_report.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-20
-// Versión: 1.0
-// Descripción: Nuevo reporte granular de sesiones de usuarios. Implementa filtros de fecha (por defecto el día actual) y expone telemetría detallada: dispositivo, duración, eventos disparados, y pantalla de salida de los héroes de la app.
+// Fecha y Hora: 2026-11-16 11:50:00 CST
+// Versión: 1.1 (Blindaje contra DOM XSS con escapeHtml y bandera Secure en cookies de filtro)
+// Descripción: Reporte granular de sesiones de usuarios. Implementa filtros de fecha y expone telemetría detallada (dispositivo, duración, eventos disparados y pantalla de salida) sanitizando todos los datos externos.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -5309,6 +5413,7 @@ ob_start();
         function formatDateTime(dateString) {
             if(!dateString) return '<span class="text-gray-400">Desconocido</span>';
             const d = new Date(dateString);
+            if (isNaN(d)) return '<span class="text-gray-400">Desconocido</span>';
             return d.toLocaleTimeString('es-MX', { hour: '2-digit', minute:'2-digit', second:'2-digit' }) + ' <span class="text-[10px] text-gray-400 block">' + d.toLocaleDateString('es-MX') + '</span>';
         }
 
@@ -5316,6 +5421,7 @@ ob_start();
         function formatDuration(secondsRaw) {
             if(!secondsRaw && secondsRaw !== 0) return '<span class="text-gray-400">-</span>';
             const totalSecs = parseInt(secondsRaw, 10);
+            if(isNaN(totalSecs)) return '<span class="text-gray-400">-</span>';
             if(totalSecs < 60) return `<span class="text-gray-600 dark:text-gray-400 font-medium">${totalSecs}s</span>`;
             const mins = Math.floor(totalSecs / 60);
             const secs = totalSecs % 60;
@@ -5349,9 +5455,9 @@ ob_start();
             const btn = document.getElementById('refreshBtn');
             const btnIcon = btn.querySelector('i');
 
-            // Guardamos las cookies de fechas
-            document.cookie = "<?php echo $cookieStartName; ?>=" + startDate + "; path=/; SameSite=Strict";
-            document.cookie = "<?php echo $cookieEndName; ?>=" + endDate + "; path=/; SameSite=Strict";
+            // Guardamos las cookies de fechas con SameSite=Strict y Secure
+            document.cookie = "<?php echo $cookieStartName; ?>=" + encodeURIComponent(startDate) + "; path=/; SameSite=Strict; Secure";
+            document.cookie = "<?php echo $cookieEndName; ?>=" + encodeURIComponent(endDate) + "; path=/; SameSite=Strict; Secure";
 
             const tbody = document.getElementById('sessionsTableBody');
             const loader = document.getElementById('tableLoader');
@@ -5367,7 +5473,7 @@ ob_start();
 
             try {
                 // Aquí llamamos al endpoint proxy que configuramos en ajax_analytics.php
-                const res = await fetch(`ajax_analytics.php?action=sessions_detail&startDate=${startDate}&endDate=${endDate}&page=${page}`);
+                const res = await fetch(`ajax_analytics.php?action=sessions_detail&startDate=${encodeURIComponent(startDate)}&endDate=${encodeURIComponent(endDate)}&page=${page}`);
                 const json = await res.json();
                 
                 if(json.success && json.data) {
@@ -5396,27 +5502,31 @@ ob_start();
                         html = `<tr><td colspan="8" class="text-center py-12 text-gray-500 font-medium"><i class="ph ph-ghost text-4xl block mb-2 opacity-50"></i>No hay sesiones registradas en este rango de fechas.</td></tr>`;
                     } else {
                         sessions.forEach(session => {
-                            // Avatar y Datos del Heroe
-                            const userName = session.user_name || 'Héroe Anónimo';
-                            const userEmail = session.user_email || 'Sin registro';
-                            const avatarLetter = userName.charAt(0).toUpperCase();
+                            // Avatar y Datos del Héroe Sanitizados contra XSS
+                            const rawUserName = String(session.user_name || 'Héroe Anónimo');
+                            const avatarLetter = escapeHtml(rawUserName.charAt(0).toUpperCase());
+                            const userName = escapeHtml(rawUserName);
+                            const userEmail = escapeHtml(session.user_email || 'Sin registro');
 
-                            // Dispositivo (iOS o Web u Otro)
+                            // Dispositivo (iOS o Web u Otro) Sanitizado
                             let deviceIcon = '<i class="ph ph-device-mobile text-gray-400"></i>';
                             let deviceColor = 'text-gray-500 bg-gray-50 border-gray-200';
-                            let osLabel = session.os_version || 'Desconocido';
+                            let osLabel = escapeHtml(session.os_version || 'Desconocido');
+                            let deviceModel = escapeHtml(session.device_model || 'Celular');
                             
-                            if(session.platform && session.platform.toLowerCase().includes('ios')) {
+                            if(session.platform && String(session.platform).toLowerCase().includes('ios')) {
                                 deviceIcon = '<i class="ph ph-apple-logo text-gray-900 dark:text-white"></i>';
                                 deviceColor = 'text-gray-900 bg-gray-100 dark:bg-gray-800 dark:text-gray-100 border-gray-300 dark:border-gray-600';
                             }
 
-                            // Pantalla Final
-                            const lastScreen = session.last_screen || 'Desconocida';
+                            // Pantalla Final Sanitizada
+                            const lastScreen = escapeHtml(session.last_screen || 'Desconocida');
                             let screenBadge = `<span class="px-2 py-1 bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 rounded text-xs font-mono truncate max-w-[150px] inline-block" title="${lastScreen}">${lastScreen}</span>`;
 
-                            // Ubicación
-                            const locationStr = session.timezone ? session.timezone.split('/').pop().replace(/_/g, ' ') : 'Desconocida';
+                            // Ubicación Sanitizada
+                            const rawLocation = session.timezone ? String(session.timezone).split('/').pop().replace(/_/g, ' ') : 'Desconocida';
+                            const locationStr = escapeHtml(rawLocation);
+                            const totalEvents = parseInt(session.total_events, 10) || 0;
 
                             html += `
                                 <tr class="border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50/50 dark:hover:bg-gray-800/50 transition-colors">
@@ -5442,7 +5552,7 @@ ob_start();
                                     
                                     <td class="py-4 px-4 whitespace-nowrap text-center">
                                         <div class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg border ${deviceColor} text-xs font-medium">
-                                            ${deviceIcon} ${session.device_model || 'Celular'}
+                                            ${deviceIcon} ${deviceModel}
                                             <span class="opacity-50 ml-1">(${osLabel})</span>
                                         </div>
                                     </td>
@@ -5453,7 +5563,7 @@ ob_start();
 
                                     <td class="py-4 px-4 whitespace-nowrap text-center">
                                         <span class="px-3 py-1 bg-purple-50 dark:bg-purple-900/30 text-purple-600 dark:text-purple-400 font-bold rounded-lg border border-purple-100 dark:border-purple-800 text-xs">
-                                            ${session.total_events || 0}
+                                            ${totalEvents}
                                         </span>
                                     </td>
                                     
@@ -7287,9 +7397,9 @@ Archivo: ./customers.php
 <?php
 // Nombre del archivo: customers.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-22
-// Versión: 2.5
-// Descripción: Se dividió la métrica de uso en dos columnas ("Último Login" y "Última Apertura") consumiendo los nuevos campos fecha_ultimo_login y fecha_ultima_apertura expuestos por la API de Hermes. Esto permite analizar el DAU recurrente vs el login explícito.
+// Fecha y Hora: 2026-11-16 11:50:00 CST
+// Versión: 2.6 (Blindaje contra DOM XSS mediante escapeHtml en todos los campos de usuario)
+// Descripción: Reporte maestro de clientes. Consume métricas de uso ("Último Login" y "Última Apertura") y sanitiza todas las cadenas provenientes de los perfiles de usuario antes de inyectarlas en el DOM.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -7328,6 +7438,7 @@ ob_start();
         function formatDate(dateString) {
             if(!dateString) return '<span class="text-gray-400">N/A</span>';
             const d = new Date(dateString);
+            if (isNaN(d)) return '<span class="text-gray-400">N/A</span>';
             return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
         }
 
@@ -7368,14 +7479,14 @@ ob_start();
             if (!locale) return { lang: '<span class="text-gray-400">N/A</span>', country: '<span class="text-gray-400">N/A</span>' };
             try {
                 // Krillin Fix: Separamos usando regex para aceptar guión bajo (_) o guión medio (-)
-                const parts = locale.split(/_|-/);
+                const parts = String(locale).split(/_|-/);
                 const langCode = parts[0].toLowerCase();
                 const countryCode = parts.length > 1 ? parts[1].toUpperCase() : '';
 
-                const langName = languageNames[langCode] || langCode;
-                const countryName = countryNames[countryCode] || countryCode;
+                const langName = escapeHtml(languageNames[langCode] || langCode);
+                const countryName = escapeHtml(countryNames[countryCode] || countryCode);
                 let flagHtml = '';
-                if (countryCode) {
+                if (/^[A-Z]{2}$/.test(countryCode)) {
                     const flag = String.fromCodePoint(...[...countryCode].map(c => c.charCodeAt(0) + 127397));
                     flagHtml = `<span class="mr-1.5 text-lg">${flag}</span> <span>${countryName}</span>`;
                 } else {
@@ -7385,7 +7496,7 @@ ob_start();
                 return { lang: langName, country: flagHtml };
             } catch (e) {
                 console.error("Error parseando locale", e);
-                return { lang: locale, country: '<span class="text-gray-400">N/A</span>' };
+                return { lang: escapeHtml(locale), country: '<span class="text-gray-400">N/A</span>' };
             }
         }
 
@@ -7479,29 +7590,28 @@ ob_start();
                             `;
                         }
 
-                        // Badge para el estado de cuenta
+                        // Badge para el estado de cuenta (Sanitizado)
                         let statusBadge = '<span class="px-2 py-1 bg-green-50 text-green-600 rounded-full text-xs font-medium">Activo</span>';
                         if(user.estado_cuenta !== 'Activo') {
-                            statusBadge = `<span class="px-2 py-1 bg-red-50 text-red-600 rounded-full text-xs font-medium">${user.estado_cuenta || 'Inactivo'}</span>`;
+                            statusBadge = `<span class="px-2 py-1 bg-red-50 text-red-600 rounded-full text-xs font-medium">${escapeHtml(user.estado_cuenta || 'Inactivo')}</span>`;
                         }
 
-                        // --- LÓGICA DE UI/UX (Género y Actividad) ---
-                        
+                        // --- LÓGICA DE UI/UX (Género y Actividad Sanitizados) ---
                         let generoHtml = '<span class="text-gray-400">-</span>';
                         if (user.genero) {
-                            const gStr = user.genero.toLowerCase();
+                            const gStr = String(user.genero).toLowerCase();
                             let gClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"; 
                             if (gStr === 'mujer' || gStr === 'femenino' || gStr === 'f') {
                                 gClass = "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800";
                             } else if (gStr === 'hombre' || gStr === 'masculino' || gStr === 'm') {
                                 gClass = "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800";
                             }
-                            generoHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${gClass}">${user.genero}</span>`;
+                            generoHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${gClass}">${escapeHtml(user.genero)}</span>`;
                         }
 
                         let nivelActividadHtml = '<span class="text-gray-400">-</span>';
                         if (user.nivel_actividad) {
-                            const aStr = user.nivel_actividad.toLowerCase();
+                            const aStr = String(user.nivel_actividad).toLowerCase();
                             let aClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"; 
                             if (aStr.includes('sedentario')) {
                                 aClass = "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800";
@@ -7514,7 +7624,7 @@ ob_start();
                             } else if (aStr.includes('activo')) {
                                 aClass = "bg-lime-100 dark:bg-lime-900/30 text-lime-600 dark:text-lime-400 border-lime-200 dark:border-lime-800";
                             }
-                            nivelActividadHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${aClass}">${user.nivel_actividad}</span>`;
+                            nivelActividadHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${aClass}">${escapeHtml(user.nivel_actividad)}</span>`;
                         }
 
                         // Cálculo de Edad
@@ -7555,10 +7665,13 @@ ob_start();
                             imcValueHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${imcClass} cursor-help" title="IMC Exacto: ${imcNumCalc.toFixed(1)}">${imcText}</span>`;
                         }
 
-                        // Métricas Base
-                        const nombre = user.nombre_completo || 'Héroe Anónimo';
-                        const peso = user.peso ? `${user.peso} kg` : '-';
-                        const altura = user.altura_cm ? `${user.altura_cm} cm` : '-';
+                        // Métricas Base Sanitizadas contra XSS
+                        const rawNombre = String(user.nombre_completo || 'Héroe Anónimo');
+                        const initialLetra = escapeHtml(rawNombre.charAt(0).toUpperCase());
+                        const nombreSeguro = escapeHtml(rawNombre);
+                        const emailSeguro = escapeHtml(user.email || '');
+                        const peso = user.peso ? `${escapeHtml(user.peso)} kg` : '-';
+                        const altura = user.altura_cm ? `${escapeHtml(user.altura_cm)} cm` : '-';
                         const localeInfo = parseLocale(user.lenguaje_preferido);
                         const subInicio = formatDate(user.subscription_started_at);
                         const subFin = formatDate(user.subscription_expires_at);
@@ -7578,11 +7691,11 @@ ob_start();
                                 <td class="py-4 px-4 whitespace-nowrap">
                                     <div class="flex items-center gap-3">
                                         <div class="w-10 h-10 rounded-full bg-calori-100 dark:bg-calori-900 flex items-center justify-center text-calori-600 dark:text-calori-400 font-bold shrink-0">
-                                            ${nombre.charAt(0).toUpperCase()}
+                                            ${initialLetra}
                                         </div>
                                         <div>
-                                            <p class="text-sm font-bold text-gray-900 dark:text-white">${nombre}</p>
-                                            <p class="text-xs text-gray-500 dark:text-gray-400">${user.email}</p>
+                                            <p class="text-sm font-bold text-gray-900 dark:text-white">${nombreSeguro}</p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">${emailSeguro}</p>
                                         </div>
                                     </div>
                                 </td>
@@ -7772,9 +7885,9 @@ Archivo: ./alimentos_catalog.php
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-29
-// Versión: 1.9
-// Descripción: Se modificó la petición de carga para filtrar únicamente los alimentos públicos (es_publico=1), manteniendo limpia la administración.
+// Fecha: 2026-07-30
+// Versión: 1.10
+// Descripción: Se agregó el atributo novalidate al formulario principal y una validación inteligente en JS para que el navegador cambie automáticamente a la pestaña con campos obligatorios faltantes (macros, etc.) en lugar de fallar silenciosamente.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -8101,6 +8214,26 @@ ob_start();
 
         async function saveAlimento(event) {
             event.preventDefault();
+
+            // KRILLIN FIX: Verificación inteligente para tabs ocultas
+            const form = document.getElementById('formAlimento');
+            if (!form.checkValidity()) {
+                const firstInvalid = form.querySelector(':invalid');
+                if (firstInvalid) {
+                    const tabPane = firstInvalid.closest('.tab-content');
+                    if (tabPane) {
+                        const tabId = tabPane.id.replace('tab-', '');
+                        switchTab(tabId);
+                    }
+                    showToast("Faltan campos obligatorios por llenar.", "warning");
+                    setTimeout(() => {
+                        firstInvalid.focus();
+                        firstInvalid.reportValidity();
+                    }, 150);
+                }
+                return;
+            }
+
             const btn = document.getElementById('btnSave');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
@@ -8485,7 +8618,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <form id="formAlimento" onsubmit="saveAlimento(event)">
+                <form id="formAlimento" onsubmit="saveAlimento(event)" novalidate>
                     
                     <div id="tab-general" class="tab-content space-y-6 animate-fade-in">
                         <div class="bg-white dark:bg-darkbase-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700">
@@ -8714,16 +8847,20 @@ Archivo: ./ajax_alimentos.php
 <?php
 // Nombre del archivo: ajax_alimentos.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.3
-// Descripción: Controlador Proxy RESTful para el Catálogo Maestro. Se incorporó el token del WAF de Cloudflare en los headers.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.4 (Saneamiento estricto intval/urlencode en parámetros GET, autoprotección de logs y SSL activo)
+// Descripción: Controlador Proxy RESTful para el Catálogo Maestro de Alimentos. Incorpora token WAF, validación numérica de IDs/paginación y verificación de certificado SSL hacia Hermes.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Sistema de logs aislados para depuración si algo falla con Hermes
 function debugLogFood($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/alimentos_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -8740,8 +8877,8 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/alimentos';
 
@@ -8755,10 +8892,10 @@ $headers = [
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
-    $page = $_GET['page'] ?? 1;
-    $limit = $_GET['limit'] ?? 50;
-    $search = urlencode($_GET['search'] ?? '');
-    $es_publico = $_GET['es_publico'] ?? '';
+    $page = max(1, intval($_GET['page'] ?? 1));
+    $limit = max(1, intval($_GET['limit'] ?? 50));
+    $search = urlencode(trim($_GET['search'] ?? ''));
+    $es_publico = isset($_GET['es_publico']) && $_GET['es_publico'] !== '' ? intval($_GET['es_publico']) : '';
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
@@ -8772,7 +8909,7 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
@@ -8784,7 +8921,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -8792,7 +8929,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -8801,10 +8938,12 @@ else {
     exit();
 }
 
-// Configuración Base cURL
+// Configuración Base cURL con SSL estricto
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -8854,16 +8993,20 @@ Archivo: ./ajax_dietas.php
 <?php
 // Nombre del archivo: ajax_dietas.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.3
-// Descripción: Controlador Proxy RESTful para Dietas. Se actualizó el listado de headers para incluir el pase del WAF de Cloudflare.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.4 (Saneamiento intval de ID/paginación, autoprotección de logs y verificación SSL activa)
+// Descripción: Controlador Proxy RESTful para Dietas. Incluye pase del WAF de Cloudflare, validación estricta de parámetros numéricos y verificación de certificado SSL.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Sistema de logs aislados para depuración si algo falla con Hermes
 function debugLogDietas($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/dietas_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -8880,8 +9023,8 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/dietas';
 
@@ -8895,9 +9038,9 @@ $headers = [
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
-    $page = $_GET['page'] ?? 1;
-    $limit = $_GET['limit'] ?? 50;
-    $search = urlencode($_GET['search'] ?? '');
+    $page = max(1, intval($_GET['page'] ?? 1));
+    $limit = max(1, intval($_GET['limit'] ?? 50));
+    $search = urlencode(trim($_GET['search'] ?? ''));
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
@@ -8907,12 +9050,12 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get_platillos' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id . '/platillos');
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 }
@@ -8924,7 +9067,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -8932,7 +9075,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -8941,10 +9084,12 @@ else {
     exit();
 }
 
-// Configuración Base cURL
+// Configuración Base cURL con SSL estricto
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -8991,21 +9136,34 @@ echo json_encode([
 ]);
 ?>-----
 Archivo: ./.htaccess
-# 1. Habilitar motor de reescritura para forzar redirección de rutas inexistentes
+# Nombre del archivo: .htaccess
+# Autor: Arturo Enriquez Betancourt con Krillin
+# Fecha y Hora: 2026-11-16 11:45:00 CST
+# Versión: 2.0 (Blindaje compatible con OpenLiteSpeed/CyberPanel para logs, includes y archivos ocultos)
+# Descripción: Reglas de reescritura y seguridad a nivel servidor web. Bloquea mediante mod_rewrite el acceso público a carpetas sensibles (/logs, /includes) y archivos ocultos, redirigiendo rutas inexistentes al dominio principal.
+
 RewriteEngine On
+
+# 1. Permitir validación de certificados SSL de Let's Encrypt (CyberPanel) pero bloquear cualquier otro archivo/carpeta oculta (ej. .git, .env, .htaccess)
+RewriteCond %{REQUEST_URI} !^/\.well-known/ [NC]
+RewriteRule (^|/)\. - [F,L]
+
+# 2. Bloquear acceso directo vía HTTP a carpetas internas (/includes, /logs) y a cualquier archivo .log (Compatible 100% con OpenLiteSpeed)
+RewriteRule ^(includes|logs)(/|$) - [F,L]
+RewriteRule \.(log|sql|md)$ - [F,L]
+
+# 3. Redirigir rutas o archivos inexistentes al dominio principal
 RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^(.*)$ https://caloritrack.com [R=301,L]
 
-# 2. Deshabilitar la navegación de directorios por seguridad
+# 4. Respaldo adicional para motores Apache / LiteSpeed Enterprise
 Options -Indexes
 
-# 3. Proteger acceso a archivos ocultos (ej. .env, .git, .htaccess)
 <FilesMatch "^\.">
     Require all denied
 </FilesMatch>
 
-# 4. Proteger acceso a archivos de registro (logs)
-<FilesMatch "\.(log)$">
+<FilesMatch "\.(log|sql|md)$">
     Require all denied
 </FilesMatch>-----

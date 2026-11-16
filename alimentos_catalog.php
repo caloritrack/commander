@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: alimentos_catalog.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-05-29
-// Versión: 1.9
-// Descripción: Se modificó la petición de carga para filtrar únicamente los alimentos públicos (es_publico=1), manteniendo limpia la administración.
+// Fecha: 2026-07-30
+// Versión: 1.10
+// Descripción: Se agregó el atributo novalidate al formulario principal y una validación inteligente en JS para que el navegador cambie automáticamente a la pestaña con campos obligatorios faltantes (macros, etc.) en lugar de fallar silenciosamente.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -330,6 +330,26 @@ ob_start();
 
         async function saveAlimento(event) {
             event.preventDefault();
+
+            // KRILLIN FIX: Verificación inteligente para tabs ocultas
+            const form = document.getElementById('formAlimento');
+            if (!form.checkValidity()) {
+                const firstInvalid = form.querySelector(':invalid');
+                if (firstInvalid) {
+                    const tabPane = firstInvalid.closest('.tab-content');
+                    if (tabPane) {
+                        const tabId = tabPane.id.replace('tab-', '');
+                        switchTab(tabId);
+                    }
+                    showToast("Faltan campos obligatorios por llenar.", "warning");
+                    setTimeout(() => {
+                        firstInvalid.focus();
+                        firstInvalid.reportValidity();
+                    }, 150);
+                }
+                return;
+            }
+
             const btn = document.getElementById('btnSave');
             btn.innerHTML = '<i class="ph ph-spinner animate-spin"></i> Guardando...';
             btn.disabled = true;
@@ -714,7 +734,7 @@ require_once __DIR__ . '/includes/header.php';
                     </div>
                 </div>
 
-                <form id="formAlimento" onsubmit="saveAlimento(event)">
+                <form id="formAlimento" onsubmit="saveAlimento(event)" novalidate>
                     
                     <div id="tab-general" class="tab-content space-y-6 animate-fade-in">
                         <div class="bg-white dark:bg-darkbase-800 p-4 rounded-xl border border-gray-200 dark:border-gray-700">

@@ -1,12 +1,19 @@
 <?php
-// Nombre del archivo: session.php
+// Nombre del archivo: includes/session.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 2.3
-// Descripción: Inicialización centralizada de sesiones para Commander. Se incluyó el nuevo archivo api_security.php para cargar las credenciales del WAF de Cloudflare de forma global.
+// Fecha y Hora: 2026-11-16 11:45:00 CST
+// Versión: 2.4 (Corrección de SameSite=Strict en Rolling Session y adición de cabeceras HTTP de seguridad)
+// Descripción: Inicialización centralizada de sesiones para Commander. Carga credenciales WAF, emite cabeceras de seguridad anti-Clickjacking/MIME-sniffing, preserva SameSite=Strict en cada renovación y valida la vigencia del JWT.
 
 // Cargamos la configuración de seguridad de la API (WAF)
 require_once __DIR__ . '/api_security.php';
+
+// Emitir cabeceras HTTP de seguridad globales
+if (!headers_sent()) {
+    header('X-Frame-Options: DENY');
+    header('X-Content-Type-Options: nosniff');
+    header('Referrer-Policy: strict-origin-when-cross-origin');
+}
 
 // Definir el tiempo de vida de la sesión (60 días en segundos)
 $dias_sesion = 60;
@@ -16,9 +23,10 @@ $segundos_sesion = 60 * 60 * 24 * $dias_sesion;
 // para que el cron de limpieza nocturno del servidor no nos las elimine.
 $session_path = __DIR__ . '/sessions_data';
 if (!is_dir($session_path)) {
-    mkdir($session_path, 0755, true);
-    // Creamos un .htaccess rápido por seguridad para evitar cualquier acceso web directo
-    file_put_contents($session_path . '/.htaccess', 'Require all denied');
+    mkdir($session_path, 0750, true);
+    // Creamos un .htaccess y un index.php por seguridad para evitar cualquier acceso web directo
+    file_put_contents($session_path . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+    file_put_contents($session_path . '/index.php', "<?php http_response_code(403); exit; ?>");
 }
 session_save_path($session_path);
 
@@ -44,17 +52,16 @@ if (session_status() === PHP_SESSION_NONE) {
 }
 
 // 4. Renovar la vigencia de la cookie cada vez que el admin navega (Rolling Session)
-// Así, los 60 días se cuentan desde el ÚLTIMO día que usaste el Commander.
+// Usamos el formato de arreglo asociativo para preservar intacto el atributo SameSite=Strict.
 if (isset($_COOKIE[session_name()])) {
-    setcookie(
-        session_name(), 
-        $_COOKIE[session_name()], 
-        time() + $segundos_sesion, 
-        '/', 
-        '', 
-        true, 
-        true
-    );
+    setcookie(session_name(), $_COOKIE[session_name()], [
+        'expires' => time() + $segundos_sesion,
+        'path' => '/',
+        'domain' => '',
+        'secure' => true,
+        'httponly' => true,
+        'samesite' => 'Strict'
+    ]);
 }
 
 // =====================================================================
@@ -81,9 +88,16 @@ if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
                 session_unset();
                 session_destroy();
                 
-                // Borramos la cookie de la sesión
+                // Borramos la cookie de la sesión manteniendo los flags de seguridad
                 if (isset($_COOKIE[session_name()])) {
-                    setcookie(session_name(), '', time() - 3600, '/');
+                    setcookie(session_name(), '', [
+                        'expires' => time() - 3600,
+                        'path' => '/',
+                        'domain' => '',
+                        'secure' => true,
+                        'httponly' => true,
+                        'samesite' => 'Strict'
+                    ]);
                 }
                 
                 // Detectar si la petición que disparó esto es AJAX/Fetch o una navegación de página normal
@@ -97,7 +111,6 @@ if (isset($_SESSION['user_token']) && !empty($_SESSION['user_token'])) {
                     exit();
                 } else {
                     // Si diste clic a una opción del menú y era navegación normal, te manda a logout
-                    // Asumimos que tienes un logout.php que redirige al login final
                     header("Location: logout.php");
                     exit();
                 }

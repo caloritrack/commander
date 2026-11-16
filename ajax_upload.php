@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: ajax_upload.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.2
-// Descripción: Controlador Proxy para subir imágenes. Se añadió la cabecera x-calori-token para autorizar la petición a través de Cloudflare.
+// Fecha y Hora: 2026-11-16 11:58:00 CST
+// Versión: 1.3 (Validación real de MIME type con finfo, límite de tamaño, whitelist de carpetas y SSL estricto)
+// Descripción: Controlador Proxy para subir imágenes a Cloudflare R2 vía Hermes. Valida en servidor que los bytes correspondan a una imagen legítima y restringe los directorios destino permitidos.
 
 require_once __DIR__ . '/includes/session.php';
 
@@ -11,7 +11,7 @@ header('Content-Type: application/json; charset=utf-8');
 
 // 1. Verificación de Seguridad: Sólo Héroes logueados pueden subir archivos
 if (!isset($_SESSION['user_token'])) {
-    echo json_encode(['success' => false, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
+    echo json_encode(['success' => false, 'http_code' => 401, 'message' => 'No autorizado. Vuelve a iniciar sesión.']);
     exit();
 }
 
@@ -24,7 +24,11 @@ if (!isset($_FILES['image'])) {
 }
 
 $file = $_FILES['image'];
-$folder = $_POST['folder'] ?? 'general'; // Para separar en R2: /food o /platillos
+
+// [KRILLIN SECURITY] Whitelist estricta para el directorio destino en R2
+$allowedFolders = ['general', 'food', 'platillos'];
+$requestedFolder = trim($_POST['folder'] ?? 'general');
+$folder = in_array($requestedFolder, $allowedFolders, true) ? $requestedFolder : 'general';
 
 // Validar errores de subida nativos de PHP
 if ($file['error'] !== UPLOAD_ERR_OK) {
@@ -32,15 +36,42 @@ if ($file['error'] !== UPLOAD_ERR_OK) {
     exit();
 }
 
+// Validar tamaño máximo (10 MB)
+$maxBytes = 10 * 1024 * 1024;
+if ($file['size'] <= 0 || $file['size'] > $maxBytes) {
+    echo json_encode(['success' => false, 'message' => 'El archivo excede el tamaño máximo permitido (10 MB) o está vacío.']);
+    exit();
+}
+
+// [KRILLIN SECURITY] Inspección real de bytes (MIME Type) en el servidor
+$finfo = finfo_open(FILEINFO_MIME_TYPE);
+$realMimeType = finfo_file($finfo, $file['tmp_name']);
+finfo_close($finfo);
+
+$allowedMimeTypes = [
+    'image/webp' => 'webp',
+    'image/jpeg' => 'jpg',
+    'image/png'  => 'png',
+    'image/gif'  => 'gif'
+];
+
+if (!array_key_exists($realMimeType, $allowedMimeTypes)) {
+    echo json_encode(['success' => false, 'message' => 'Formato de archivo no permitido (' . htmlspecialchars($realMimeType) . '). Sólo se aceptan imágenes WebP, JPG, PNG o GIF.']);
+    exit();
+}
+
+// Sanitizar el nombre del archivo enviado
+$baseName = pathinfo($file['name'], PATHINFO_FILENAME);
+$safeBaseName = preg_replace('/[^a-zA-Z0-9_-]/', '_', $baseName) ?: 'imagen_caloritrack';
+$safeFileName = $safeBaseName . '.' . $allowedMimeTypes[$realMimeType];
+
 // 3. Empaquetar y mandar a la API de Hermes
-// Preparamos el archivo con CURLFile (Evita el deprecado '@')
-$cfile = new CURLFile($file['tmp_name'], $file['type'], $file['name']);
+$cfile = new CURLFile($file['tmp_name'], $realMimeType, $safeFileName);
 $postData = [
     'image' => $cfile,
     'folder' => $folder
 ];
 
-// EL FIX ESTÁ AQUÍ: Restauramos la ruta correcta que Hermes ya conoce
 $apiUrl = 'https://api.caloritrack.com/admin/upload-image'; 
 
 $ch = curl_init();
@@ -52,7 +83,9 @@ curl_setopt($ch, CURLOPT_HTTPHEADER, [
     'Authorization: Bearer ' . $token,
     'x-calori-token: ' . CALORI_WAF_TOKEN
 ]);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 30);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
@@ -66,7 +99,6 @@ if ($httpCode === 401) {
     }
     session_destroy();
 }
-// ------------------
 
 // 4. Manejo de Errores de Red
 if ($curlError) {
@@ -78,14 +110,12 @@ $decoded = json_decode($response, true);
 
 // 5. Devolver la respuesta al Frontend
 if ($httpCode >= 200 && $httpCode < 300) {
-    // Éxito: devolvemos la ruta o nombre final para que el Javascript lo ponga en el input de texto
     echo json_encode([
         'success' => true, 
         'data' => isset($decoded['data']) ? $decoded['data'] : $decoded
     ]);
 } else {
-    // Falla: Hermes rechazó el archivo
     $errorMsg = isset($decoded['message']) ? $decoded['message'] : 'Hermes rechazó el archivo (Error ' . $httpCode . ').';
-    echo json_encode(['success' => false, 'message' => $errorMsg]);
+    echo json_encode(['success' => false, 'http_code' => $httpCode, 'message' => $errorMsg]);
 }
 ?>

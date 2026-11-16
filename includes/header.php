@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: includes/header.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-06-01
-// Versión: 1.8
-// Descripción: Cabecera global. Se agregó un interceptor de Fetch global con Javascript para detectar expiración de sesión (401) y redirigir con un modal elegante.
+// Fecha y Hora: 2026-11-16 11:45:00 CST
+// Versión: 1.9 (Adición de sanitizador global escapeHtml contra ataques DOM XSS)
+// Descripción: Cabecera global. Incluye configuración de Tailwind, prevención de flash en modo oscuro, función global escapeHtml() para sanitizar datos externos en tablas dinámicas e interceptor de expiración de sesión (401).
 
 $pageTitle = $pageTitle ?? 'Portal de Héroes | Caloritrack';
 $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-center p-4 font-sans text-gray-800 antialiased relative overflow-hidden';
@@ -61,6 +61,18 @@ $bodyClass = $bodyClass ?? 'bg-wellness min-h-screen flex items-center justify-c
     </script>
 
     <script>
+        // [KRILLIN SECURITY] Sanitizador Global contra DOM XSS
+        // Escapa caracteres peligrosos (&, <, >, ", ') antes de inyectar variables en innerHTML o atributos
+        window.escapeHtml = function(unsafe) {
+            if (unsafe === null || unsafe === undefined) return '';
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        };
+
         // [KRILLIN] Cerbero Interceptor (Fetch + XHR + jQuery)
         // Función centralizada para disparar el modal con estilo
         function triggerSessionExpiredModal() {

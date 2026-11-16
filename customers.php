@@ -1,9 +1,9 @@
 <?php
 // Nombre del archivo: customers.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-22
-// Versión: 2.5
-// Descripción: Se dividió la métrica de uso en dos columnas ("Último Login" y "Última Apertura") consumiendo los nuevos campos fecha_ultimo_login y fecha_ultima_apertura expuestos por la API de Hermes. Esto permite analizar el DAU recurrente vs el login explícito.
+// Fecha y Hora: 2026-11-16 11:50:00 CST
+// Versión: 2.6 (Blindaje contra DOM XSS mediante escapeHtml en todos los campos de usuario)
+// Descripción: Reporte maestro de clientes. Consume métricas de uso ("Último Login" y "Última Apertura") y sanitiza todas las cadenas provenientes de los perfiles de usuario antes de inyectarlas en el DOM.
 
 require_once __DIR__ . '/includes/auth_protect.php';
 
@@ -42,6 +42,7 @@ ob_start();
         function formatDate(dateString) {
             if(!dateString) return '<span class="text-gray-400">N/A</span>';
             const d = new Date(dateString);
+            if (isNaN(d)) return '<span class="text-gray-400">N/A</span>';
             return d.toLocaleDateString('es-MX', { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute:'2-digit' });
         }
 
@@ -82,14 +83,14 @@ ob_start();
             if (!locale) return { lang: '<span class="text-gray-400">N/A</span>', country: '<span class="text-gray-400">N/A</span>' };
             try {
                 // Krillin Fix: Separamos usando regex para aceptar guión bajo (_) o guión medio (-)
-                const parts = locale.split(/_|-/);
+                const parts = String(locale).split(/_|-/);
                 const langCode = parts[0].toLowerCase();
                 const countryCode = parts.length > 1 ? parts[1].toUpperCase() : '';
 
-                const langName = languageNames[langCode] || langCode;
-                const countryName = countryNames[countryCode] || countryCode;
+                const langName = escapeHtml(languageNames[langCode] || langCode);
+                const countryName = escapeHtml(countryNames[countryCode] || countryCode);
                 let flagHtml = '';
-                if (countryCode) {
+                if (/^[A-Z]{2}$/.test(countryCode)) {
                     const flag = String.fromCodePoint(...[...countryCode].map(c => c.charCodeAt(0) + 127397));
                     flagHtml = `<span class="mr-1.5 text-lg">${flag}</span> <span>${countryName}</span>`;
                 } else {
@@ -99,7 +100,7 @@ ob_start();
                 return { lang: langName, country: flagHtml };
             } catch (e) {
                 console.error("Error parseando locale", e);
-                return { lang: locale, country: '<span class="text-gray-400">N/A</span>' };
+                return { lang: escapeHtml(locale), country: '<span class="text-gray-400">N/A</span>' };
             }
         }
 
@@ -193,29 +194,28 @@ ob_start();
                             `;
                         }
 
-                        // Badge para el estado de cuenta
+                        // Badge para el estado de cuenta (Sanitizado)
                         let statusBadge = '<span class="px-2 py-1 bg-green-50 text-green-600 rounded-full text-xs font-medium">Activo</span>';
                         if(user.estado_cuenta !== 'Activo') {
-                            statusBadge = `<span class="px-2 py-1 bg-red-50 text-red-600 rounded-full text-xs font-medium">${user.estado_cuenta || 'Inactivo'}</span>`;
+                            statusBadge = `<span class="px-2 py-1 bg-red-50 text-red-600 rounded-full text-xs font-medium">${escapeHtml(user.estado_cuenta || 'Inactivo')}</span>`;
                         }
 
-                        // --- LÓGICA DE UI/UX (Género y Actividad) ---
-                        
+                        // --- LÓGICA DE UI/UX (Género y Actividad Sanitizados) ---
                         let generoHtml = '<span class="text-gray-400">-</span>';
                         if (user.genero) {
-                            const gStr = user.genero.toLowerCase();
+                            const gStr = String(user.genero).toLowerCase();
                             let gClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"; 
                             if (gStr === 'mujer' || gStr === 'femenino' || gStr === 'f') {
                                 gClass = "bg-pink-100 dark:bg-pink-900/30 text-pink-600 dark:text-pink-400 border-pink-200 dark:border-pink-800";
                             } else if (gStr === 'hombre' || gStr === 'masculino' || gStr === 'm') {
                                 gClass = "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800";
                             }
-                            generoHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${gClass}">${user.genero}</span>`;
+                            generoHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${gClass}">${escapeHtml(user.genero)}</span>`;
                         }
 
                         let nivelActividadHtml = '<span class="text-gray-400">-</span>';
                         if (user.nivel_actividad) {
-                            const aStr = user.nivel_actividad.toLowerCase();
+                            const aStr = String(user.nivel_actividad).toLowerCase();
                             let aClass = "bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700"; 
                             if (aStr.includes('sedentario')) {
                                 aClass = "bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 border-red-200 dark:border-red-800";
@@ -228,7 +228,7 @@ ob_start();
                             } else if (aStr.includes('activo')) {
                                 aClass = "bg-lime-100 dark:bg-lime-900/30 text-lime-600 dark:text-lime-400 border-lime-200 dark:border-lime-800";
                             }
-                            nivelActividadHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${aClass}">${user.nivel_actividad}</span>`;
+                            nivelActividadHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${aClass}">${escapeHtml(user.nivel_actividad)}</span>`;
                         }
 
                         // Cálculo de Edad
@@ -269,10 +269,13 @@ ob_start();
                             imcValueHtml = `<span class="px-2 py-1 rounded-md text-[11px] font-bold uppercase tracking-wider border ${imcClass} cursor-help" title="IMC Exacto: ${imcNumCalc.toFixed(1)}">${imcText}</span>`;
                         }
 
-                        // Métricas Base
-                        const nombre = user.nombre_completo || 'Héroe Anónimo';
-                        const peso = user.peso ? `${user.peso} kg` : '-';
-                        const altura = user.altura_cm ? `${user.altura_cm} cm` : '-';
+                        // Métricas Base Sanitizadas contra XSS
+                        const rawNombre = String(user.nombre_completo || 'Héroe Anónimo');
+                        const initialLetra = escapeHtml(rawNombre.charAt(0).toUpperCase());
+                        const nombreSeguro = escapeHtml(rawNombre);
+                        const emailSeguro = escapeHtml(user.email || '');
+                        const peso = user.peso ? `${escapeHtml(user.peso)} kg` : '-';
+                        const altura = user.altura_cm ? `${escapeHtml(user.altura_cm)} cm` : '-';
                         const localeInfo = parseLocale(user.lenguaje_preferido);
                         const subInicio = formatDate(user.subscription_started_at);
                         const subFin = formatDate(user.subscription_expires_at);
@@ -292,11 +295,11 @@ ob_start();
                                 <td class="py-4 px-4 whitespace-nowrap">
                                     <div class="flex items-center gap-3">
                                         <div class="w-10 h-10 rounded-full bg-calori-100 dark:bg-calori-900 flex items-center justify-center text-calori-600 dark:text-calori-400 font-bold shrink-0">
-                                            ${nombre.charAt(0).toUpperCase()}
+                                            ${initialLetra}
                                         </div>
                                         <div>
-                                            <p class="text-sm font-bold text-gray-900 dark:text-white">${nombre}</p>
-                                            <p class="text-xs text-gray-500 dark:text-gray-400">${user.email}</p>
+                                            <p class="text-sm font-bold text-gray-900 dark:text-white">${nombreSeguro}</p>
+                                            <p class="text-xs text-gray-500 dark:text-gray-400">${emailSeguro}</p>
                                         </div>
                                     </div>
                                 </td>

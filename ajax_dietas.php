@@ -1,16 +1,20 @@
 <?php
 // Nombre del archivo: ajax_dietas.php
 // Autor: Arturo Enriquez Betancourt con Krillin
-// Fecha: 2026-07-04
-// Versión: 1.3
-// Descripción: Controlador Proxy RESTful para Dietas. Se actualizó el listado de headers para incluir el pase del WAF de Cloudflare.
+// Fecha y Hora: 2026-11-16 12:03:00 CST
+// Versión: 1.4 (Saneamiento intval de ID/paginación, autoprotección de logs y verificación SSL activa)
+// Descripción: Controlador Proxy RESTful para Dietas. Incluye pase del WAF de Cloudflare, validación estricta de parámetros numéricos y verificación de certificado SSL.
 
 require_once __DIR__ . '/includes/session.php';
 
 // Sistema de logs aislados para depuración si algo falla con Hermes
 function debugLogDietas($message) {
     $logDir = __DIR__ . '/logs';
-    if (!is_dir($logDir)) { mkdir($logDir, 0755, true); }
+    if (!is_dir($logDir)) {
+        mkdir($logDir, 0750, true);
+        file_put_contents($logDir . '/.htaccess', "RewriteEngine On\nRewriteRule ^ - [F,L]\nRequire all denied");
+        file_put_contents($logDir . '/index.php', "<?php http_response_code(403); exit; ?>");
+    }
     $logFile = $logDir . '/dietas_debug.log';
     $date = date('Y-m-d H:i:s');
     $formattedMessage = (is_array($message) || is_object($message)) ? json_encode($message, JSON_PRETTY_PRINT | JSON_UNESCAPED_UNICODE) : $message;
@@ -27,8 +31,8 @@ if (!isset($_SESSION['user_token'])) {
 
 $token = $_SESSION['user_token'];
 $method = $_SERVER['REQUEST_METHOD'];
-$action = $_GET['action'] ?? '';
-$id = trim($_GET['id'] ?? '');
+$action = trim($_GET['action'] ?? '');
+$id = intval($_GET['id'] ?? 0);
 
 $apiUrl = 'https://api.caloritrack.com/admin/dietas';
 
@@ -42,9 +46,9 @@ $headers = [
 
 // ENRUTADOR DINÁMICO
 if ($action === 'list' && $method === 'GET') {
-    $page = $_GET['page'] ?? 1;
-    $limit = $_GET['limit'] ?? 50;
-    $search = urlencode($_GET['search'] ?? '');
+    $page = max(1, intval($_GET['page'] ?? 1));
+    $limit = max(1, intval($_GET['limit'] ?? 50));
+    $search = urlencode(trim($_GET['search'] ?? ''));
     
     $fetchUrl = $apiUrl . "?page={$page}&limit={$limit}";
     if (!empty($search)) {
@@ -54,12 +58,12 @@ if ($action === 'list' && $method === 'GET') {
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 } 
 elseif ($action === 'get_platillos' && $method === 'GET') {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id . '/platillos');
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'GET');
 }
@@ -71,7 +75,7 @@ elseif ($action === 'create' && $method === 'POST') {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     $rawInput = file_get_contents('php://input');
     $headers[] = 'Content-Length: ' . strlen($rawInput);
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
@@ -79,7 +83,7 @@ elseif ($action === 'update' && ($method === 'PUT' || $method === 'POST')) {
     curl_setopt($ch, CURLOPT_POSTFIELDS, $rawInput);
 } 
 elseif ($action === 'delete' && ($method === 'DELETE' || $method === 'POST')) {
-    if(empty($id)) { echo json_encode(['success' => false, 'message' => 'ID requerido.']); exit(); }
+    if ($id <= 0) { echo json_encode(['success' => false, 'message' => 'ID válido requerido.']); exit(); }
     curl_setopt($ch, CURLOPT_URL, $apiUrl . '/' . $id);
     curl_setopt($ch, CURLOPT_CUSTOMREQUEST, 'DELETE');
 } 
@@ -88,10 +92,12 @@ else {
     exit();
 }
 
-// Configuración Base cURL
+// Configuración Base cURL con SSL estricto
 curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
 curl_setopt($ch, CURLOPT_HTTPHEADER, $headers);
-curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, true);
+curl_setopt($ch, CURLOPT_SSL_VERIFYHOST, 2);
+curl_setopt($ch, CURLOPT_TIMEOUT, 20);
 
 $response = curl_exec($ch);
 $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
